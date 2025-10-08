@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
+import process from "process";
+window.process = process;
 import {
   Upload,
   Download,
@@ -30,7 +32,7 @@ export const P2PFileSharing = () => {
 
   // Initialize Socket.IO
   useEffect(() => {
-    const newSocket = io("http://localhost:3005", {
+    const newSocket = io("http://localhost:3000", {
       transports: ["websocket"],
       reconnection: true,
     });
@@ -38,7 +40,6 @@ export const P2PFileSharing = () => {
     newSocket.on("connect", () => {
       setIsConnected(true);
       setMyPeerId(newSocket.id);
-      console.log("✅ Connected:", newSocket.id);
     });
 
     newSocket.on("disconnect", () => {
@@ -71,11 +72,13 @@ export const P2PFileSharing = () => {
     });
 
     newSocket.on("signal", (data) => {
-      console.log("📡 Signal received from:", data.from);
+      //recieving socket signal and candidate from backend
       if (!peersRef.current[data.from]) {
         connectToPeer(data.from, false, newSocket);
       }
       peersRef.current[data.from].signal(data.signal);
+      //peer.signal(data.signal) is a SimplePeer API method.
+      // It feeds the WebRTC signaling data (offer/answer/ICE candidates) from the other peer into the current peer.
     });
 
     newSocket.on("file-available", (fileData) => {
@@ -103,14 +106,15 @@ export const P2PFileSharing = () => {
     const peer = new SimplePeer({
       initiator,
       trickle: true,
-      config: {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:global.stun.twilio.com:3478" },
-        ],
-      },
+      // config: {
+      //   iceServers: [
+      //     { urls: "stun:stun.l.google.com:19302" },
+      //     { urls: "stun:global.stun.twilio.com:3478" },
+      //   ],
+      // },
     });
 
+    //fires offer to the backend with candidate
     peer.on("signal", (signal) => {
       (socketInstance || socket).emit("signal", {
         signal,
@@ -119,8 +123,9 @@ export const P2PFileSharing = () => {
       });
     });
 
+    //after both parties handshake is completed
     peer.on("connect", () => {
-      console.log("🤝 Connected to peer:", peerId);
+      console.log("peer connection successfull", peerId);
       // Send file info if we have one
       if (selectedFile) {
         peer.send(

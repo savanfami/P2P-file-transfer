@@ -10,8 +10,8 @@ const server = http.createServer(app);
 const startServer = async () => {
   try {
     // await connectRedis();
-    // const port = process.env.PORT ||3002;
-    const port=3005
+    const port = process.env.PORT ||3002;
+    // const port=3005
 
     initializeSocket(server);
 

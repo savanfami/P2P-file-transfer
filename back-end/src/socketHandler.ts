@@ -39,9 +39,10 @@ export const initializeSocket = (httpServer) => {
     // Handle WebRTC signaling (offer/answer/ice candidates)
     socket.on("signal", (data) => {
       const { to, signal, type } = data;
+      console.log(signal,'signal');
       
       if (!to) {
-        console.error("❌ Signal missing 'to' field");
+        console.log(" Signal missing 'to' field");
         return;
       }
 
