@@ -39,7 +39,7 @@ export const initializeSocket = (httpServer) => {
     // Handle WebRTC signaling (offer/answer/ice candidates)
     socket.on("signal", (data) => {
       const { to, signal, type } = data;
-      console.log(signal,'signal');
+      // console.log(signal,'signal');
       
       if (!to) {
         console.log(" Signal missing 'to' field");
@@ -51,7 +51,7 @@ export const initializeSocket = (httpServer) => {
       io.to(to).emit("signal", {
         signal,
         from: socket.id,
-        type
+        type 
       });
     });
 
@@ -240,4 +240,4 @@ export const getSocketStats = () => {
       connectedAt: p.connectedAt
     }))
   };
-};
+}; 

@@ -28,8 +28,7 @@ export const P2PFileSharing = () => {
   const receivedChunksRef = useRef([]);
   const receivedSizeRef = useRef(0);
   const selectedFileRef = useRef(null);
-  const CHUNK_SIZE = 16384; // 16KB
-
+  const CHUNK_SIZE = 16 * 1024;
   // Initialize Socket.IO
   useEffect(() => {
     const newSocket = io("http://localhost:3000", {
@@ -141,12 +140,12 @@ export const P2PFileSharing = () => {
     const peer = new SimplePeer({
       initiator,
       trickle: true,
-      // config: {
-      //   iceServers: [
-      //     { urls: "stun:stun.l.google.com:19302" },
-      //     { urls: "stun:global.stun.twilio.com:3478" },
-      //   ],
-      // },
+      config: {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:global.stun.twilio.com:3478" },
+        ],
+      },
     });
 
     //fires offer to the backend with candidate
@@ -258,56 +257,117 @@ export const P2PFileSharing = () => {
     }
   };
 
-  const sendFile = (peerId) => {
-    const fileToSend = selectedFileRef.current; // Use ref instead of state
+  // const sendFile = (peerId) => {
+  //   const fileToSend = selectedFileRef.current;
 
-    if (!fileToSend || !peersRef.current[peerId]) {
-      console.error("❌ Cannot send file - missing file or peer connection");
-      console.error("   File:", fileToSend ? fileToSend.name : "none");
-      console.error("   Peer exists:", !!peersRef.current[peerId]);
+  //   const peer = peersRef.current[peerId];
+
+  //   if (!fileToSend || !peer) {
+  //     console.log("no file or no peer present");
+  //     return;
+  //   }
+
+  //   console.log("📤 Sending file:", fileToSend.name, "to peer:", peerId);
+
+  //   peer.send(
+  //     JSON.stringify({
+  //       type: "file-start",
+  //       fileName: fileToSend.name,
+  //       fileSize: fileToSend.size,
+  //       fileType: fileToSend.type,
+  //       fileId: fileToSend.fileId,
+  //     })
+  //   );
+  //   const CHUNK_SIZE = 64 * 1024;
+
+  //   const reader = new FileReader();
+  //   let offset = 0;
+
+  //   reader.onload = (e) => {
+  //     if (peer.connected) {
+  //       peer.send(e.target.result);
+  //       offset += e.target.result.byteLength;
+
+  //       const progress = (offset / fileToSend.size) * 100;
+  //       console.log(`⬆️ Upload progress: ${Math.round(progress)}%`);
+
+  //       if (offset < fileToSend.size) {
+  //         readSlice(offset);
+  //       } else {
+  //         console.log("✅ File sent successfully to peer:", peerId);
+  //       }
+  //     }
+  //   };
+
+  //   const readSlice = (o) => {
+  //     const slice = fileToSend.slice(o, o + CHUNK_SIZE);
+  //     reader.readAsArrayBuffer(slice);
+  //   };
+
+  //   readSlice(0);
+  // };
+
+const sendFile =async (peerId) => {
+  const fileToSend = selectedFileRef.current;
+  const peer = peersRef.current[peerId];
+  if (!fileToSend || !peer) return;
+
+  const CHUNK_SIZE = 64 * 1024;
+  console.log("📤 Sending file:", fileToSend.name, "to peer:", peerId);
+
+  // Step 1: Send metadata
+  peer.send(
+    JSON.stringify({
+      type: "file-start",
+      fileName: fileToSend.name,
+      fileSize: fileToSend.size,
+      fileType: fileToSend.type,
+      fileId: fileToSend.fileId,
+    })
+  );
+
+  // ✅ Create the worker correctly
+  const worker = new Worker(new URL("./helper/fileWorker.js", import.meta.url), {
+    type: "module",
+  });
+
+  let sentBytes = 0;
+
+  // ✅ Send minimal file data (not the full File object)
+  worker.postMessage({
+    fileData: {
+      name: fileToSend.name,
+      type: fileToSend.type,
+      size: fileToSend.size,
+      buffer: await fileToSend.arrayBuffer(),
+    },
+    chunkSize: CHUNK_SIZE,
+  });
+
+  worker.onmessage = async (event) => {
+    const { chunk, done } = event.data;
+
+    if (done) {
+      console.log("✅ File fully sent");
+      worker.terminate();
       return;
     }
 
-    const peer = peersRef.current[peerId];
-
-    console.log("📤 Sending file:", fileToSend.name, "to peer:", peerId);
-
-    peer.send(
-      JSON.stringify({
-        type: "file-start",
-        fileName: fileToSend.name,
-        fileSize: fileToSend.size,
-        fileType: fileToSend.type,
-        fileId: fileToSend.fileId,
-      })
-    );
-
-    const reader = new FileReader();
-    let offset = 0;
-
-    reader.onload = (e) => {
-      if (peer.connected) {
-        peer.send(e.target.result);
-        offset += e.target.result.byteLength;
-
-        const progress = (offset / fileToSend.size) * 100;
-        console.log(`⬆️ Upload progress: ${Math.round(progress)}%`);
-
-        if (offset < fileToSend.size) {
-          readSlice(offset);
-        } else {
-          console.log("✅ File sent successfully to peer:", peerId);
-        }
+    if (chunk && peer.connected) {
+      // Prevent buffer overflow
+      while (peer._channel.bufferedAmount > 1 * 1024 * 1024) {
+        await new Promise((res) => setTimeout(res, 10));
       }
-    };
 
-    const readSlice = (o) => {
-      const slice = fileToSend.slice(o, o + CHUNK_SIZE);
-      reader.readAsArrayBuffer(slice);
-    };
+      peer.send(chunk);
+      sentBytes += chunk.byteLength;
 
-    readSlice(0);
+      const progress = (sentBytes / fileToSend.size) * 100;
+      console.log(`⬆️ Upload progress: ${progress.toFixed(2)}%`);
+    }
   };
+};
+
 
   const saveReceivedFile = () => {
     const blob = new Blob(receivedChunksRef.current, {
