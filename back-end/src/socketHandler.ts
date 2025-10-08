@@ -79,7 +79,7 @@ export const initializeSocket = (httpServer) => {
       // Update peer's file list
       const peer = peers.get(socket.id);
       if (peer) {
-        peer.files.push(offer);
+        peer.files.push(offer); 
       }
 
       console.log(`📁 File offered: ${fileName} (${formatBytes(fileSize)}) by ${socket.id}`);
