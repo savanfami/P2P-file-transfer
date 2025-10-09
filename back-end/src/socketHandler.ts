@@ -16,15 +16,18 @@ export const initializeSocket = (httpServer) => {
 
   io.on("connection", (socket) => {
     const { userId } = socket.handshake.query;
+    console.log(typeof userId);
+    console.log(userId, "userdid");
     if (!userId) {
-      console.log("missing userId");
       socket.disconnect(true);
       return;
     }
     const existingPeer = peers.get(userId);
+    console.log(existingPeer, "existing peer");
     if (existingPeer) {
       existingPeer.socketId = socket.id;
       existingPeer.reconnectedAt = Date.now();
+      existingPeer.online = true;
       peers.set(userId, existingPeer);
       console.log(` Peer reconnected: ${userId}`);
     } else {
@@ -205,7 +208,10 @@ export const initializeSocket = (httpServer) => {
       }
 
       // Remove peer
-      peers.delete(userId);
+      // peers.delete(userId);
+
+      peer.disconnectedAt = Date.now();
+      peer.online = false;
 
       // Notify others
       socket.broadcast.emit("peer-left", {
