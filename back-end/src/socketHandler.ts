@@ -6,7 +6,7 @@ const fileOffers = new Map();
 export const initializeSocket = (httpServer) => {
   const io = new Server(httpServer, {
     cors: {
-      origin: "http://localhost:5173",
+      origin: process.env.CLIENT_URL,
       methods: ["GET", "POST"],
       credentials: true,
     },
@@ -228,7 +228,3 @@ export const initializeSocket = (httpServer) => {
   console.log("✅ Socket.IO initialized");
   return io;
 };
-
-
-
-
