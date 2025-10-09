@@ -15,24 +15,36 @@ export const initializeSocket = (httpServer) => {
   });
 
   io.on("connection", (socket) => {
-    console.log(`🟢 Peer connected: ${socket.id}`);
-
-    // Store peer info
-    peers.set(socket.id, {
-      id: socket.id,
-      connectedAt: Date.now(),
-      files: [],
-    });
+    const { userId } = socket.handshake.query;
+    if (!userId) {
+      console.log("missing userId");
+      socket.disconnect(true);
+      return;
+    }
+    const existingPeer = peers.get(userId);
+    if (existingPeer) {
+      existingPeer.socketId = socket.id;
+      existingPeer.reconnectedAt = Date.now();
+      peers.set(userId, existingPeer);
+      console.log(` Peer reconnected: ${userId}`);
+    } else {
+      peers.set(userId, {
+        socketId: socket.id,
+        connectedAt: Date.now(),
+        files: [],
+      });
+      console.log(` New peer connected: ${userId}`);
+    }
 
     // Send current peer count and list
     socket.emit("peers-list", {
-      peers: Array.from(peers.keys()).filter((id) => id !== socket.id),
+      peers: Array.from(peers.keys()).filter((id) => id !== userId),
       totalPeers: peers.size,
     });
 
     // Notify others about new peer
     socket.broadcast.emit("peer-joined", {
-      peerId: socket.id,
+      peerId: userId,
       totalPeers: peers.size,
     });
 
@@ -41,18 +53,13 @@ export const initializeSocket = (httpServer) => {
       const { to, signal, type } = data;
       // console.log(signal,'signal');
 
-      if (!to) {
-        console.log(" Signal missing 'to' field");
-        return;
-      }
+      if (!to) return;
 
-      console.log(
-        `📡 Signal [${type || "unknown"}] from ${socket.id} to ${to}`
-      );
-
-      io.to(to).emit("signal", {
+      console.log(`📡 Signal [${type || "unknown"}] from ${userId} to ${to}`);
+      const target = peers.get(to);
+      io.to(target.socketId).emit("signal", {
         signal,
-        from: socket.id,
+        from: userId,
         type,
       });
     });
@@ -61,17 +68,14 @@ export const initializeSocket = (httpServer) => {
     socket.on("file-offer", (data) => {
       const { fileName, fileSize, fileType, fileId } = data;
 
-      if (!fileName || !fileSize) {
-        console.error("❌ Invalid file offer");
-        return;
-      }
+      if (!fileName || !fileSize) return;
 
       const offer = {
-        fileId: fileId || `${socket.id}-${Date.now()}`,
+        fileId: fileId || `${userId}-${Date.now()}`,
         fileName,
         fileSize,
         fileType,
-        peerId: socket.id,
+        peerId: userId,
         offeredAt: Date.now(),
       };
 
@@ -79,12 +83,10 @@ export const initializeSocket = (httpServer) => {
       fileOffers.set(offer.fileId, offer);
 
       // Update peer's file list
-      const peer = peers.get(socket.id);
-      if (peer) {
-        peer.files.push(offer);
-      }
+      const peer = peers.get(userId);
+      if (peer) peer.files.push(offer);
 
-      console.log(`📁 File offered: ${fileName}  by ${socket.id}`);
+      console.log(` File offered: ${fileName} by ${userId}`);
 
       // Broadcast to all other peers
       socket.broadcast.emit("file-available", offer);
@@ -97,32 +99,35 @@ export const initializeSocket = (httpServer) => {
     socket.on("file-request", (data) => {
       const { fileId, targetPeerId } = data;
 
-      if (!fileId || !targetPeerId) {
-        console.error("❌ Invalid file request");
-        return;
-      }
+      if (!fileId || !targetPeerId) return;
 
       console.log(
-        `📥 File request: ${fileId} from ${socket.id} to ${targetPeerId}`
+        `📥 File request: ${fileId} from ${userId} to ${targetPeerId}`
       );
 
       // Forward request to file owner
-      io.to(targetPeerId).emit("file-request-received", {
-        fileId,
-        requesterId: socket.id,
-      });
+      const target = peers.get(targetPeerId);
+      if (target) {
+        io.to(target.socketId).emit("file-request-received", {
+          fileId,
+          requesterId: userId,
+        });
+      }
     });
 
     // Handle file transfer initiation
     socket.on("file-transfer-start", (data) => {
       const { fileId, targetPeerId } = data;
 
-      console.log(`🚀 File transfer starting: ${fileId}`);
+      console.log(` File transfer starting: ${fileId}`);
 
-      io.to(targetPeerId).emit("file-transfer-initiated", {
-        fileId,
-        senderId: socket.id,
-      });
+      const target = peers.get(targetPeerId);
+      if (target) {
+        io.to(target.socketId).emit("file-transfer-initiated", {
+          fileId,
+          senderId: userId,
+        });
+      }
     });
 
     // Handle file transfer completion
@@ -143,7 +148,7 @@ export const initializeSocket = (httpServer) => {
 
     // Handle peer status updates
     socket.on("peer-status", (data) => {
-      const peer = peers.get(socket.id);
+      const peer = peers.get(userId);
       if (peer) {
         peer.status = data.status;
         peer.lastUpdate = Date.now();
@@ -153,7 +158,7 @@ export const initializeSocket = (httpServer) => {
     // Get all available files
     socket.on("get-available-files", () => {
       const allFiles = Array.from(fileOffers.values()).filter(
-        (offer) => offer.peerId !== socket.id
+        (offer) => offer.peerId !== userId
       );
 
       socket.emit("available-files-list", allFiles);
@@ -162,37 +167,36 @@ export const initializeSocket = (httpServer) => {
     // Remove file offer
     socket.on("remove-file-offer", (data) => {
       const { fileId } = data;
+      const offer = fileOffers.get(fileId);
 
-      if (fileOffers.has(fileId)) {
-        const offer = fileOffers.get(fileId);
-        if (offer.peerId === socket.id) {
-          fileOffers.delete(fileId);
-          socket.broadcast.emit("file-removed", { fileId });
-          console.log(`🗑️ File offer removed: ${fileId}`);
-        }
+      if (offer && offer.peerId === userId) {
+        fileOffers.delete(fileId);
+        socket.broadcast.emit("file-removed", { fileId });
+        console.log(`🗑️ File offer removed: ${fileId}`);
       }
     });
 
     // Handle peer ready state
     socket.on("peer-ready", () => {
-      const peer = peers.get(socket.id);
+      const peer = peers.get(userId);
       if (peer) {
         peer.ready = true;
-        console.log(`✅ Peer ready: ${socket.id}`);
+        console.log(`✅ Peer ready: ${userId}`);
       }
     });
 
     // Handle errors
     socket.on("error", (error) => {
-      console.error(`❌ Socket error for ${socket.id}:`, error);
+      console.error(`❌ Socket error for ${userId}:`, error);
     });
 
     // Handle disconnection
     socket.on("disconnect", (reason) => {
-      console.log(`🔴 Peer disconnected: ${socket.id} (${reason})`);
+      console.log(`🔴 Peer disconnected: ${userId} (${reason})`);
 
       // Remove peer's file offers
-      const peer = peers.get(socket.id);
+      const peer = peers.get(userId);
+      if (!peer) return;
       if (peer && peer.files) {
         peer.files.forEach((file) => {
           fileOffers.delete(file.fileId);
@@ -201,11 +205,11 @@ export const initializeSocket = (httpServer) => {
       }
 
       // Remove peer
-      peers.delete(socket.id);
+      peers.delete(userId);
 
       // Notify others
       socket.broadcast.emit("peer-left", {
-        peerId: socket.id,
+        peerId: userId,
         totalPeers: peers.size,
       });
     });

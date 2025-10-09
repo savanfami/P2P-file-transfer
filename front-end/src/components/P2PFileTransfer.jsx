@@ -30,7 +30,13 @@ export const P2PFileSharing = () => {
   const selectedFileRef = useRef(null);
   // Initialize Socket.IO
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
+    let peerId = localStorage.getItem("peerId");
+    if (!peerId) {
+      peerId = crypto.randomUUID();
+      localStorage.setItem("peerId", peerId);
+    }
+    const newSocket = io(import.meta.env.VITE_SERVER_URL, {
+      query: { userId: peerId },
       transports: ["websocket"],
       reconnection: true,
     });
