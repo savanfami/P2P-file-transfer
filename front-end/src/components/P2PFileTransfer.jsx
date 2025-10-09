@@ -28,10 +28,9 @@ export const P2PFileSharing = () => {
   const receivedChunksRef = useRef([]);
   const receivedSizeRef = useRef(0);
   const selectedFileRef = useRef(null);
-  const CHUNK_SIZE = 16 * 1024;
   // Initialize Socket.IO
   useEffect(() => {
-    const newSocket = io("http://localhost:3000", {
+    const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
       transports: ["websocket"],
       reconnection: true,
     });
