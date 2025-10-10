@@ -16,14 +16,11 @@ export const initializeSocket = (httpServer) => {
 
   io.on("connection", (socket) => {
     const { userId } = socket.handshake.query;
-    console.log(typeof userId);
-    console.log(userId, "userdid");
     if (!userId) {
       socket.disconnect(true);
       return;
     }
     const existingPeer = peers.get(userId);
-    console.log(existingPeer, "existing peer");
     if (existingPeer) {
       existingPeer.socketId = socket.id;
       existingPeer.reconnectedAt = Date.now();
