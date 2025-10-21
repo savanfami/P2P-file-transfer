@@ -39,25 +39,26 @@ export const P2PFileSharing = () => {
       query: { userId: peerId },
       transports: ["websocket"],
       reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     newSocket.on("connect", () => {
       setIsConnected(true);
       setMyPeerId(newSocket.id);
-      console.log("✅ Connected to server:", newSocket.id);
     });
 
     newSocket.on("disconnect", () => {
       setIsConnected(false);
-      console.log("❌ Disconnected");
     });
 
     newSocket.on("peers-list", (data) => {
-      console.log("👥 Peers list:", data);
       setPeers(data.peers || []);
       // Connect to existing peers - use ID comparison to determine initiator
       (data.peers || []).forEach((peerId) => {
-        const shouldInitiate = newSocket.id < peerId; // Consistent initiator selection
+        const myPeerId = localStorage.getItem("peerId");
+        const shouldInitiate = myPeerId < peerId;
         console.log(
           `Connecting to ${peerId}, I am initiator: ${shouldInitiate}`
         );
@@ -66,7 +67,7 @@ export const P2PFileSharing = () => {
     });
 
     newSocket.on("peer-joined", (data) => {
-      console.log("🟢 Peer joined:", data.peerId);
+      console.log(" Peer joined:", data.peerId);
       setPeers((prev) => [...prev, data.peerId]);
       // Don't initiate connection here - let the signal handler do it
       // This prevents both peers from trying to be initiator
@@ -113,7 +114,6 @@ export const P2PFileSharing = () => {
     });
 
     newSocket.on("file-available", (fileData) => {
-      console.log("📁 File available:", fileData);
       setAvailableFiles((prev) => {
         const exists = prev.find((f) => f.fileId === fileData.fileId);
         if (exists) return prev;
@@ -181,7 +181,6 @@ export const P2PFileSharing = () => {
     });
 
     peer.on("data", (data) => {
-      console.log("📦 Data received from peer:", peerId, "Size:", data.length);
       handlePeerData(peerId, data);
     });
 
@@ -201,13 +200,7 @@ export const P2PFileSharing = () => {
         console.log("📄 File info received:", message);
       } else if (message.type === "file-request") {
         console.log("📥 File request received from:", peerId);
-        console.log("   Requested fileId:", message.fileId);
-        console.log(
-          "   My selected file:",
-          selectedFileRef.current
-            ? selectedFileRef.current.fileId
-            : "No file selected"
-        );
+
         console.log("   Peer connected:", peersRef.current[peerId]?.connected);
 
         // Check if this is the file they're requesting
@@ -261,131 +254,6 @@ export const P2PFileSharing = () => {
       }
     }
   };
-
-  //   const peer = peersRef.current[peerId];
-
-  //   if (!fileToSend || !peer) {
-  //     console.log("no file or no peer present");
-  //     return;
-  //   }
-
-  //   console.log("📤 Sending file:", fileToSend.name, "to peer:", peerId);
-
-  //   peer.send(
-  //     JSON.stringify({
-  //       type: "file-start",
-  //       fileName: fileToSend.name,
-  //       fileSize: fileToSend.size,
-  //       fileType: fileToSend.type,
-  //       fileId: fileToSend.fileId,
-  //     })
-  //   );
-  //   const CHUNK_SIZE = 64 * 1024;
-
-  //   const reader = new FileReader();
-  //   let offset = 0;
-
-  //   reader.onload = (e) => {
-  //     if (peer.connected) {
-  //       peer.send(e.target.result);
-  //       offset += e.target.result.byteLength;
-
-  //       const progress = (offset / fileToSend.size) * 100;
-  //       console.log(`⬆️ Upload progress: ${Math.round(progress)}%`);
-
-  //       if (offset < fileToSend.size) {
-  //         readSlice(offset);
-  //       } else {
-  //         console.log("✅ File sent successfully to peer:", peerId);
-  //       }
-  //     }
-  //   };
-
-  //   const readSlice = (o) => {
-  //     const slice = fileToSend.slice(o, o + CHUNK_SIZE);
-  //     reader.readAsArrayBuffer(slice);
-  //   };
-
-  //   readSlice(0);
-  // };
-
-  // const sendFile = async (peerId) => {
-  //   const fileToSend = selectedFileRef.current;
-  //   const peer = peersRef.current[peerId];
-  //   if (!fileToSend || !peer) return;
-
-  //   const CHUNK_SIZE = 64 * 1024;
-  //   console.log("📤 Sending file:", fileToSend.name, "to peer:", peerId);
-
-  //   // Send metadata
-  //   peer.send(
-  //     JSON.stringify({
-  //       type: "file-start",
-  //       fileName: fileToSend.name,
-  //       fileSize: fileToSend.size,
-  //       fileType: fileToSend.type,
-  //       fileId: fileToSend.fileId,
-  //     })
-  //   );
-
-  //   const workerCode = `
-  //   self.onmessage = async (e) => {
-  //     const { fileBuffer, chunkSize, totalSize } = e.data;
-  //     let offset = 0;
-
-  //     while (offset < totalSize) {
-  //       const end = Math.min(offset + chunkSize, totalSize);
-  //       const chunk = fileBuffer.slice(offset, end);
-
-  //       // Send chunk back to main thread
-  //       postMessage({ chunk, offset }, [chunk]);
-  //       offset = end;
-  //     }
-
-  //     postMessage({ done: true });
-  //   };
-  // `;
-
-  //   const blob = new Blob([workerCode], { type: "application/javascript" });
-  //   const workerUrl = URL.createObjectURL(blob);
-  //   const worker = new Worker(workerUrl);
-
-  //   let sentBytes = 0;
-  //   const fileBuffer = await fileToSend.arrayBuffer();
-
-  //   worker.postMessage(
-  //     {
-  //       fileBuffer,
-  //       chunkSize: CHUNK_SIZE,
-  //       totalSize: fileToSend.size,
-  //     },
-  //     [fileBuffer]
-  //   );
-
-  //   worker.onmessage = async (event) => {
-  //     const { chunk, done } = event.data;
-
-  //     if (done) {
-  //       console.log("✅ File fully sent");
-  //       worker.terminate();
-  //       URL.revokeObjectURL(workerUrl);
-  //       return;
-  //     }
-
-  //     if (chunk && peer.connected) {
-  //       // Prevent buffer overflow
-  //       while (peer._channel.bufferedAmount > 1 * 1024 * 1024) {
-  //         await new Promise((res) => setTimeout(res, 10));
-  //       }
-
-  //       peer.send(chunk);
-  //       sentBytes += chunk.byteLength;
-
-  //       const progress = (sentBytes / fileToSend.size) * 100;
-  //       console.log(`⬆️ Upload progress: ${progress.toFixed(2)}%`);
-  //     }
-  //   };
-  // };
 
   const sendFile = async (peerId) => {
     const fileToSend = selectedFileRef.current;
@@ -477,8 +345,6 @@ export const P2PFileSharing = () => {
   const handleSendFile = () => {
     if (!selectedFile || !socket) return;
 
-    console.log("📢 Broadcasting file to network:", selectedFile.name);
-
     socket.emit("file-offer", {
       fileName: selectedFile.name,
       fileSize: selectedFile.size,
@@ -502,23 +368,16 @@ export const P2PFileSharing = () => {
   };
 
   const requestFile = (fileData) => {
-    console.log("🔽 Attempting to request file:", fileData.fileName);
     console.log("Available peers:", Object.keys(peersRef.current));
-    console.log("Looking for peer:", fileData.peerId);
 
     const peer = peersRef.current[fileData.peerId];
 
     if (!peer) {
-      console.error("❌ Peer not found in peersRef:", fileData.peerId);
       alert("Peer connection not found. The sender may have disconnected.");
       return;
     }
 
-    console.log("Peer found. Connected:", peer.connected);
-    console.log("Peer destroyed:", peer.destroyed);
-
     if (peer.connected) {
-      console.log("✅ Sending file request to peer");
       peer.send(
         JSON.stringify({
           type: "file-request",
@@ -614,7 +473,14 @@ export const P2PFileSharing = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => setSelectedFile(null)}
+                  onClick={() => {
+                    if (selectedFile && socket) {
+                      socket.emit("remove-file-offer", {
+                        fileId: selectedFile.fileId,
+                      });
+                    }
+                    setSelectedFile(null);
+                  }}
                   className="p-2 hover:bg-red-100 rounded-lg transition-colors"
                 >
                   <Trash2 className="text-red-500" size={20} />
@@ -622,7 +488,7 @@ export const P2PFileSharing = () => {
               </div>
               <button
                 onClick={handleSendFile}
-                className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
+                className="w-full px-6 py-3 bg-purple-600 cursor-pointer text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
               >
                 <Upload size={20} />
                 Send File to Network

@@ -26,6 +26,9 @@ export const initializeSocket = (httpServer) => {
       existingPeer.reconnectedAt = Date.now();
       existingPeer.online = true;
       peers.set(userId, existingPeer);
+      socket.emit("peers-list", {
+        peers: Array.from(peers.keys()).filter((id) => id !== userId),
+      });
       console.log(` Peer reconnected: ${userId}`);
     } else {
       peers.set(userId, {
@@ -79,20 +82,17 @@ export const initializeSocket = (httpServer) => {
         offeredAt: Date.now(),
       };
 
-      // Store file offer
+      //storing file offer
       fileOffers.set(offer.fileId, offer);
 
       // Update peer's file list
       const peer = peers.get(userId);
       if (peer) peer.files.push(offer);
 
-      console.log(` File offered: ${fileName} by ${userId}`);
 
       // Broadcast to all other peers
       socket.broadcast.emit("file-available", offer);
 
-      // Send confirmation back to sender
-      socket.emit("file-offer-success", { fileId: offer.fileId });
     });
 
     // Handle file request
@@ -100,10 +100,6 @@ export const initializeSocket = (httpServer) => {
       const { fileId, targetPeerId } = data;
 
       if (!fileId || !targetPeerId) return;
-
-      console.log(
-        `📥 File request: ${fileId} from ${userId} to ${targetPeerId}`
-      );
 
       // Forward request to file owner
       const target = peers.get(targetPeerId);
@@ -115,54 +111,7 @@ export const initializeSocket = (httpServer) => {
       }
     });
 
-    // Handle file transfer initiation
-    socket.on("file-transfer-start", (data) => {
-      const { fileId, targetPeerId } = data;
 
-      console.log(` File transfer starting: ${fileId}`);
-
-      const target = peers.get(targetPeerId);
-      if (target) {
-        io.to(target.socketId).emit("file-transfer-initiated", {
-          fileId,
-          senderId: userId,
-        });
-      }
-    });
-
-    // Handle file transfer completion
-    socket.on("file-transfer-complete", (data) => {
-      const { fileId, success } = data;
-
-      console.log(
-        `${success ? "✅" : "❌"} File transfer ${
-          success ? "completed" : "failed"
-        }: ${fileId}`
-      );
-
-      socket.emit("transfer-status", {
-        fileId,
-        status: success ? "completed" : "failed",
-      });
-    });
-
-    // Handle peer status updates
-    socket.on("peer-status", (data) => {
-      const peer = peers.get(userId);
-      if (peer) {
-        peer.status = data.status;
-        peer.lastUpdate = Date.now();
-      }
-    });
-
-    // Get all available files
-    socket.on("get-available-files", () => {
-      const allFiles = Array.from(fileOffers.values()).filter(
-        (offer) => offer.peerId !== userId
-      );
-
-      socket.emit("available-files-list", allFiles);
-    });
 
     // Remove file offer
     socket.on("remove-file-offer", (data) => {
@@ -172,27 +121,18 @@ export const initializeSocket = (httpServer) => {
       if (offer && offer.peerId === userId) {
         fileOffers.delete(fileId);
         socket.broadcast.emit("file-removed", { fileId });
-        console.log(`🗑️ File offer removed: ${fileId}`);
       }
     });
 
-    // Handle peer ready state
-    socket.on("peer-ready", () => {
-      const peer = peers.get(userId);
-      if (peer) {
-        peer.ready = true;
-        console.log(`✅ Peer ready: ${userId}`);
-      }
-    });
-
+ 
     // Handle errors
     socket.on("error", (error) => {
-      console.error(`❌ Socket error for ${userId}:`, error);
+      console.log(` Socket error for ${userId}:`, error);
     });
 
     // Handle disconnection
-    socket.on("disconnect", (reason) => {
-      console.log(`🔴 Peer disconnected: ${userId} (${reason})`);
+    socket.on("disconnect", (r) => {
+      console.log(` Peer disconnected:${r}`);
 
       // Remove peer's file offers
       const peer = peers.get(userId);
@@ -203,9 +143,6 @@ export const initializeSocket = (httpServer) => {
           socket.broadcast.emit("file-removed", { fileId: file.fileId });
         });
       }
-
-      // Remove peer
-      // peers.delete(userId);
 
       peer.disconnectedAt = Date.now();
       peer.online = false;
