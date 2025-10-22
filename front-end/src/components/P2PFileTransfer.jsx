@@ -414,9 +414,12 @@ export const P2PFileSharing = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-700 p-6">
+    <div
+      className="min-h-screen bg-gradient-to-br from-orange-500 via-amber-500 to-yellow-500
+ p-6"
+    >
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-5xl font-bold text-white text-center mb-8 drop-shadow-lg">
+        <h1 className="text-5xl font-bold  text-white text-center mb-8 drop-shadow-lg ">
           🎬 P2P File Sharing
         </h1>
 
@@ -435,7 +438,7 @@ export const P2PFileSharing = () => {
               <WifiOff className="text-red-600" />
             )}
             <div className="flex-1">
-              <div className="font-bold text-lg">
+              <div className="font-bold text-lg text-black font-serif">
                 {isConnected ? "✅ Connected to Network" : "⚠️ Disconnected"}
               </div>
               {isConnected && (
@@ -445,7 +448,7 @@ export const P2PFileSharing = () => {
               )}
             </div>
             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg">
-              <Users className="text-purple-600" size={20} />
+              <Users className="text-black" size={20} />
               <span className="font-bold text-xl">{peers.length}</span>
             </div>
           </div>
@@ -454,19 +457,19 @@ export const P2PFileSharing = () => {
         {/* Upload Section */}
         <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
           <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-            <Upload className="text-purple-600" />
+            <Upload className="text-gray-600" />
             Share a File
           </h2>
 
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="border-4 border-dashed border-purple-300 rounded-xl p-12 text-center cursor-pointer hover:border-purple-500 hover:bg-purple-50 transition-all"
+            className="border-4 border-dashed border-gray-300 rounded-xl p-12 text-center cursor-pointer hover:border-orange-200  transition-all"
           >
-            <File className="mx-auto text-purple-400 mb-4" size={64} />
-            <p className="text-xl font-semibold text-purple-600 mb-2">
+            <File className="mx-auto text-gray-700 mb-4" size={64} />
+            <p className="text-xl font-semibold text-black mb-2">
               Click to select a file
             </p>
-            <p className="text-gray-500">Movies, videos, or any large files</p>
+            <p className="text-gray-700">Movies , videos or any large files</p>
           </div>
 
           <input
@@ -480,9 +483,7 @@ export const P2PFileSharing = () => {
             <div className="mt-4 p-4 bg-green-50 border-2 border-green-200 rounded-xl">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <div className="font-bold text-lg">
-                    ✅ {selectedFile.name}
-                  </div>
+                  <div className="font-bold text-lg ">{selectedFile.name}</div>
                   <div className="text-gray-600">
                     {formatBytes(selectedFile.size)}
                   </div>
@@ -498,15 +499,15 @@ export const P2PFileSharing = () => {
                   }}
                   className="p-2 hover:bg-red-100 rounded-lg transition-colors"
                 >
-                  <Trash2 className="text-red-500" size={20} />
+                  <Trash2 className="text-red-500 cursor-pointer" size={20} />
                 </button>
               </div>
               <button
                 onClick={handleSendFile}
-                className="w-full px-6 py-3 bg-purple-600 cursor-pointer text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
+                className="w-full px-6 py-3 bg-gray-600 cursor-pointer text-white rounded-lg font-semibold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
               >
                 <Upload size={20} />
-                Send File to Network
+                Send File
               </button>
             </div>
           )}
@@ -515,7 +516,7 @@ export const P2PFileSharing = () => {
         {/* Available Files */}
         <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
           <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-            <Download className="text-blue-600" />
+            <Download className="text-black " />
             Available Files
           </h2>
 
@@ -528,7 +529,7 @@ export const P2PFileSharing = () => {
               {availableFiles.map((file) => (
                 <div
                   key={file.fileId}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border-2 border-gray-200 hover:border-blue-300 transition-all"
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border-2 border-gray-200 hover:border-orange-200 transition-all"
                 >
                   <div className="flex-1">
                     <div className="font-bold text-lg">🎬 {file.fileName}</div>
@@ -539,7 +540,7 @@ export const P2PFileSharing = () => {
                   </div>
                   <button
                     onClick={() => requestFile(file)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                    className="px-6 py-3 bg-orange-500 text-white font-semibold rounded-lg cursor-pointer  transition-colors"
                   >
                     Download
                   </button>
@@ -566,7 +567,7 @@ export const P2PFileSharing = () => {
                   </div>
                   <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-gray-100 to-orange-500 transition-all duration-300"
                       style={{ width: `${download.progress}%` }}
                     />
                   </div>
