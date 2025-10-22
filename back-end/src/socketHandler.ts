@@ -29,6 +29,8 @@ export const initializeSocket = (httpServer) => {
       socket.emit("peers-list", {
         peers: Array.from(peers.keys()).filter((id) => id !== userId),
       });
+      socket.broadcast.emit("peer-reconnected", { peerId: userId });
+
       console.log(` Peer reconnected: ${userId}`);
     } else {
       peers.set(userId, {
@@ -89,10 +91,8 @@ export const initializeSocket = (httpServer) => {
       const peer = peers.get(userId);
       if (peer) peer.files.push(offer);
 
-
       // Broadcast to all other peers
       socket.broadcast.emit("file-available", offer);
-
     });
 
     // Handle file request
@@ -111,8 +111,6 @@ export const initializeSocket = (httpServer) => {
       }
     });
 
-
-
     // Remove file offer
     socket.on("remove-file-offer", (data) => {
       const { fileId } = data;
@@ -124,7 +122,6 @@ export const initializeSocket = (httpServer) => {
       }
     });
 
- 
     // Handle errors
     socket.on("error", (error) => {
       console.log(` Socket error for ${userId}:`, error);

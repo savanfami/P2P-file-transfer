@@ -54,6 +54,8 @@ export const P2PFileSharing = () => {
     });
 
     newSocket.on("peers-list", (data) => {
+      Object.values(peersRef.current).forEach((p) => p.destroy());
+      peersRef.current = {};
       setPeers(data.peers || []);
       // Connect to existing peers - use ID comparison to determine initiator
       (data.peers || []).forEach((peerId) => {
@@ -81,6 +83,19 @@ export const P2PFileSharing = () => {
         delete peersRef.current[data.peerId];
       }
       setAvailableFiles((prev) => prev.filter((f) => f.peerId !== data.peerId));
+    });
+
+    newSocket.on("peer-reconnected", (data) => {
+      console.log("🔁 Peer reconnected:", data.peerId);
+      setPeers((prev) => {
+        if (prev.includes(data.peerId)) return prev;
+        return [...prev, data.peerId];
+      });
+
+      // Reconnect WebRTC connection
+      const myPeerId = localStorage.getItem("peerId");
+      const shouldInitiate = myPeerId < data.peerId;
+      connectToPeer(data.peerId, shouldInitiate, newSocket);
     });
 
     newSocket.on("signal", (data) => {
