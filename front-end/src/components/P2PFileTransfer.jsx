@@ -46,7 +46,7 @@ export const P2PFileSharing = () => {
 
     newSocket.on("connect", () => {
       setIsConnected(true);
-      setMyPeerId(newSocket.id);
+      setMyPeerId(peerId);
     });
 
     newSocket.on("disconnect", () => {
