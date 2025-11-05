@@ -1,7 +1,8 @@
 import { Server } from "socket.io";
 
-const peers = new Map();
-const fileOffers = new Map();
+const peers = new Map(); // userId → peer data
+const fileOffers = new Map(); // fileId → offer data
+const roomPeers = new Map(); // roomCode → Set of userIds
 
 export const initializeSocket = (httpServer) => {
   const io = new Server(httpServer, {
@@ -15,53 +16,66 @@ export const initializeSocket = (httpServer) => {
   });
 
   io.on("connection", (socket) => {
-    const { userId } = socket.handshake.query;
-    if (!userId) {
+    const { userId, roomCode } = socket.handshake.query;
+
+    if (!userId || !roomCode) {
+      socket.emit("error", { message: "Missing userId or roomCode" });
       socket.disconnect(true);
       return;
     }
+
+    // Join room
+    socket.join(roomCode);
+
+    // Track room membership
+    if (!roomPeers.has(roomCode)) roomPeers.set(roomCode, new Set());
+    const members = roomPeers.get(roomCode);
+    members.add(userId);
+
+    // Track peer
     const existingPeer = peers.get(userId);
     if (existingPeer) {
       existingPeer.socketId = socket.id;
       existingPeer.reconnectedAt = Date.now();
       existingPeer.online = true;
+      existingPeer.roomCode = roomCode;
       peers.set(userId, existingPeer);
-      socket.emit("peers-list", {
-        peers: Array.from(peers.keys()).filter((id) => id !== userId),
-      });
-      socket.broadcast.emit("peer-reconnected", { peerId: userId });
 
-      console.log(` Peer reconnected: ${userId}`);
+      socket.emit("peers-list", {
+        peers: Array.from(members).filter((id) => id !== userId),
+      });
+
+      socket.to(roomCode).emit("peer-reconnected", { peerId: userId });
+      console.log(`🔄 Peer reconnected: ${userId} in room ${roomCode}`);
     } else {
       peers.set(userId, {
         socketId: socket.id,
         connectedAt: Date.now(),
         files: [],
+        roomCode,
       });
-      console.log(` New peer connected: ${userId}`);
+      console.log(`🆕 New peer connected: ${userId} in room ${roomCode}`);
     }
 
-    // Send current peer count and list
+    // Send room peers
     socket.emit("peers-list", {
-      peers: Array.from(peers.keys()).filter((id) => id !== userId),
-      totalPeers: peers.size,
+      peers: Array.from(members).filter((id) => id !== userId),
+      totalPeers: members.size,
     });
 
-    // Notify others about new peer
-    socket.broadcast.emit("peer-joined", {
+    socket.to(roomCode).emit("peer-joined", {
       peerId: userId,
-      totalPeers: peers.size,
+      totalPeers: members.size,
     });
 
-    // Handle WebRTC signaling (offer/answer/ice candidates)
+    // Handle WebRTC signaling (only within room)
     socket.on("signal", (data) => {
       const { to, signal, type } = data;
-      // console.log(signal,'signal');
-
       if (!to) return;
 
-      console.log(`📡 Signal [${type || "unknown"}] from ${userId} to ${to}`);
       const target = peers.get(to);
+      if (!target || target.roomCode !== roomCode) return;
+
       io.to(target.socketId).emit("signal", {
         signal,
         from: userId,
@@ -69,10 +83,9 @@ export const initializeSocket = (httpServer) => {
       });
     });
 
-    // Handle file offer announcement
+    // File offer (within room)
     socket.on("file-offer", (data) => {
       const { fileName, fileSize, fileType, fileId } = data;
-
       if (!fileName || !fileSize) return;
 
       const offer = {
@@ -81,29 +94,25 @@ export const initializeSocket = (httpServer) => {
         fileSize,
         fileType,
         peerId: userId,
+        roomCode,
         offeredAt: Date.now(),
       };
 
-      //storing file offer
       fileOffers.set(offer.fileId, offer);
 
-      // Update peer's file list
       const peer = peers.get(userId);
       if (peer) peer.files.push(offer);
 
-      // Broadcast to all other peers
-      socket.broadcast.emit("file-available", offer);
+      socket.to(roomCode).emit("file-available", offer);
     });
 
-    // Handle file request
+    // File request (within room)
     socket.on("file-request", (data) => {
       const { fileId, targetPeerId } = data;
-
       if (!fileId || !targetPeerId) return;
 
-      // Forward request to file owner
       const target = peers.get(targetPeerId);
-      if (target) {
+      if (target && target.roomCode === roomCode) {
         io.to(target.socketId).emit("file-request-received", {
           fileId,
           requesterId: userId,
@@ -118,54 +127,61 @@ export const initializeSocket = (httpServer) => {
 
       if (offer && offer.peerId === userId) {
         fileOffers.delete(fileId);
-        socket.broadcast.emit("file-removed", { fileId });
+        socket.to(roomCode).emit("file-removed", { fileId });
       }
     });
 
-    // Handle errors
+    // Error handling
     socket.on("error", (error) => {
-      console.log(` Socket error for ${userId}:`, error);
+      console.log(`⚠️ Socket error for ${userId}:`, error);
     });
 
-    // Handle disconnection
-    socket.on("disconnect", (r) => {
-      console.log(` Peer disconnected:${r}`);
+    // Handle disconnect
+    socket.on("disconnect", (reason) => {
+      console.log(`❌ Peer disconnected: ${userId} (${reason})`);
 
-      // Remove peer's file offers
       const peer = peers.get(userId);
       if (!peer) return;
-      if (peer && peer.files) {
+
+      // Remove their offers
+      if (peer.files) {
         peer.files.forEach((file) => {
           fileOffers.delete(file.fileId);
-          socket.broadcast.emit("file-removed", { fileId: file.fileId });
+          socket.to(roomCode).emit("file-removed", { fileId: file.fileId });
         });
       }
 
+      // Update peer state
       peer.disconnectedAt = Date.now();
       peer.online = false;
 
-      // Notify others
-      socket.broadcast.emit("peer-left", {
+      // Remove from room
+      const members = roomPeers.get(roomCode);
+      if (members) {
+        members.delete(userId);
+        if (members.size === 0) roomPeers.delete(roomCode);
+      }
+
+      socket.to(roomCode).emit("peer-left", {
         peerId: userId,
-        totalPeers: peers.size,
+        totalPeers: members ? members.size : 0,
       });
     });
   });
 
-  // Cleanup old file offers periodically (every 5 minutes)
+  // Cleanup old file offers (every 5 min)
   setInterval(() => {
     const now = Date.now();
-    const maxAge = 30 * 60 * 1000; // 30 minutes
-
+    const maxAge = 30 * 60 * 1000; // 30 mins
     for (const [fileId, offer] of fileOffers.entries()) {
       if (now - offer.offeredAt > maxAge) {
         fileOffers.delete(fileId);
-        io.emit("file-removed", { fileId });
+        io.to(offer.roomCode).emit("file-removed", { fileId });
         console.log(`🗑️ Cleaned up old file offer: ${fileId}`);
       }
     }
   }, 5 * 60 * 1000);
 
-  console.log("✅ Socket.IO initialized");
+  console.log("✅ Socket.IO initialized with room/session support");
   return io;
 };
