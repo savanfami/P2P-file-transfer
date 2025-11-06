@@ -1,8 +1,8 @@
 import { Server } from "socket.io";
 
-const peers = new Map(); // userId → peer data
-const fileOffers = new Map(); // fileId → offer data
-const roomPeers = new Map(); // roomCode → Set of userIds
+const peers = new Map();
+const fileOffers = new Map();
+const roomPeers = new Map();
 
 export const initializeSocket = (httpServer) => {
   const io = new Server(httpServer, {
@@ -63,6 +63,12 @@ export const initializeSocket = (httpServer) => {
       totalPeers: members.size,
     });
 
+    // Send existing file offers in room
+    const currentOffers = Array.from(fileOffers.values()).filter(
+      (f) => f.roomCode === roomCode
+    );
+    if (currentOffers.length) socket.emit("initial-file-offers", currentOffers);
+
     socket.to(roomCode).emit("peer-joined", {
       peerId: userId,
       totalPeers: members.size,
@@ -104,20 +110,6 @@ export const initializeSocket = (httpServer) => {
       if (peer) peer.files.push(offer);
 
       socket.to(roomCode).emit("file-available", offer);
-    });
-
-    // File request (within room)
-    socket.on("file-request", (data) => {
-      const { fileId, targetPeerId } = data;
-      if (!fileId || !targetPeerId) return;
-
-      const target = peers.get(targetPeerId);
-      if (target && target.roomCode === roomCode) {
-        io.to(target.socketId).emit("file-request-received", {
-          fileId,
-          requesterId: userId,
-        });
-      }
     });
 
     // Remove file offer

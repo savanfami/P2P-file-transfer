@@ -42,6 +42,12 @@ export const P2PFileSharing = () => {
     setRoomCode(code);
   };
 
+  useEffect(() => {
+    if (isInRoom && roomCode) {
+      localStorage.setItem("roomCode", roomCode);
+    }
+  }, [isInRoom, roomCode]);
+
   // Copy room code to clipboard
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
@@ -72,6 +78,14 @@ export const P2PFileSharing = () => {
     }
   };
 
+  useEffect(() => {
+    const savedRoom = localStorage.getItem("roomCode");
+    if (savedRoom) {
+      setRoomCode(savedRoom);
+      setIsInRoom(true);
+    }
+  }, []);
+
   // Initialize Socket.IO
   useEffect(() => {
     if (!isInRoom) return;
@@ -93,6 +107,10 @@ export const P2PFileSharing = () => {
     newSocket.on("connect", () => {
       setIsConnected(true);
       setMyPeerId(peerId);
+    });
+
+    newSocket.on("initial-file-offers", (files) => {
+      setAvailableFiles(files);
     });
 
     newSocket.on("disconnect", () => {
