@@ -112,6 +112,38 @@ export const initializeSocket = (httpServer) => {
       socket.to(roomCode).emit("file-available", offer);
     });
 
+    socket.on("exit-room", (data) => {
+      const { userId, roomCode } = data;
+      console.log(`🚪 Peer exited room manually: ${userId} (${roomCode})`);
+
+      const peer = peers.get(userId);
+      if (peer) {
+        // Remove file offers made by this peer
+        if (peer.files) {
+          peer.files.forEach((file) => {
+            fileOffers.delete(file.fileId);
+            socket.to(roomCode).emit("file-removed", { fileId: file.fileId });
+          });
+        }
+
+        // Remove from peers and room
+        peer.online = false;
+        peers.delete(userId);
+      }
+
+      const members = roomPeers.get(roomCode);
+      if (members) {
+        members.delete(userId);
+        if (members.size === 0) roomPeers.delete(roomCode);
+      }
+
+      socket.leave(roomCode);
+      socket.to(roomCode).emit("peer-left", { peerId: userId });
+
+      // Clean close of socket
+      socket.disconnect(true);
+    });
+
     // Remove file offer
     socket.on("remove-file-offer", (data) => {
       const { fileId } = data;

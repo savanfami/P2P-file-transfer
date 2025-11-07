@@ -36,6 +36,23 @@ export const P2PFileSharing = () => {
   const receivedSizeRef = useRef(0);
   const selectedFileRef = useRef(null);
 
+  const exitRoom = () => {
+    if (socket) {
+      socket.emit("exit-room", { userId: myPeerId, roomCode });
+      socket.disconnect();
+    }
+
+    Object.values(peersRef.current).forEach((peer) => peer.destroy());
+    peersRef.current = {};
+
+    setPeers([]);
+    setAvailableFiles([]);
+    setSelectedFile(null);
+    localStorage.removeItem("roomCode");
+
+    setIsInRoom(false);
+  };
+
   // Generate random room code
   const generateRoomCode = () => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -495,6 +512,12 @@ export const P2PFileSharing = () => {
   // Main App Screen
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-500 via-amber-500 to-yellow-500 p-6">
+      <button
+        onClick={exitRoom}
+        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg shadow-2xl transition-all "
+      >
+        Exit Room
+      </button>
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-5xl font-bold text-white drop-shadow-lg">
