@@ -51,7 +51,12 @@ export const P2PFileSharing = () => {
     localStorage.removeItem("roomCode");
 
     setIsInRoom(false);
+    
   };
+
+
+
+
 //---------//
   // Generate random room code
   const generateRoomCode = () => {
@@ -427,82 +432,88 @@ export const P2PFileSharing = () => {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
-  // Room Entry Screen
-  if (!isInRoom) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-500 via-amber-500 to-yellow-500 flex items-center justify-center p-6">
-        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">
-              🎬 P2P File Sharing
-            </h1>
-            <p className="text-gray-600">Share files directly with peers</p>
-          </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Enter Room Code
-              </label>
-              <input
-                type="text"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                placeholder="Enter code or generate one"
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-orange-500 focus:outline-none text-lg font-mono text-center uppercase"
-                maxLength={8}
-              />
+  
+  // Room Entry Screen
+ if (!isInRoom) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full">
+          <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-3xl p-8 shadow-2xl">
+            <div className="text-center mb-6">
+              <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-yellow-300">
+               P2P File Sharing
+              </h1>
+              <p className="text-gray-400 mt-2">
+                Connect directly with peers and transfer files securely.
+              </p>
             </div>
 
-            <button
-              onClick={generateRoomCode}
-              className="w-full px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-            >
-              <Shuffle size={20} />
-              Generate Random Code
-            </button>
-
-            {roomCode && (
-              <div className="flex gap-2">
-                <button
-                  onClick={copyRoomCode}
-                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-                >
-                  {copied ? (
-                    <>
-                      <Check size={20} />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={20} />
-                      Copy
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={shareRoomCode}
-                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-                >
-                  <Share2 size={20} />
-                  Share
-                </button>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">
+                  Enter Room Code
+                </label>
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  placeholder="Enter code or generate one"
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl focus:border-orange-400 focus:outline-none text-lg font-mono text-center uppercase text-white"
+                  maxLength={8}
+                />
               </div>
-            )}
 
-            <button
-              onClick={joinRoom}
-              disabled={!roomCode.trim()}
-              className="w-full px-6 py-4 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 disabled:from-gray-300 disabled:to-gray-300 text-white font-bold rounded-xl transition-all text-lg disabled:cursor-not-allowed"
-            >
-              Join Room
-            </button>
-          </div>
+              <button
+                onClick={generateRoomCode}
+                className="w-full px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <Shuffle size={16} />
+                Generate Random Code
+              </button>
 
-          <div className="mt-6 p-4 bg-orange-50 rounded-xl">
-            <p className="text-sm text-gray-600 text-center">
-              💡 Share the room code with others to start transferring files
-            </p>
+              {roomCode && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={copyRoomCode}
+                    className="flex-1 px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    {copied ? (
+                      <>
+                        <Check size={18} />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={18} />
+                        Copy
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={shareRoomCode}
+                    className="flex-1 px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Share2 size={18} />
+                    Share
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={joinRoom}
+                disabled={!roomCode.trim()}
+                className="w-full px-6 py-4 bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-orange-600 hover:to-yellow-500 text-black font-bold rounded-xl transition-all text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Join Room
+              </button>
+            </div>
+
+            <div className="mt-6 p-4 bg-white/3 rounded-xl">
+              <p className="text-sm text-gray-300 text-center">
+                Share the room code with others to start transferring files
+              </p>
+            </div>
           </div>
         </div>
       </div>
