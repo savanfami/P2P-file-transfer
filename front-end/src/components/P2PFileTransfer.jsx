@@ -52,7 +52,7 @@ export const P2PFileSharing = () => {
 
     setIsInRoom(false);
   };
-
+//---------//
   // Generate random room code
   const generateRoomCode = () => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
