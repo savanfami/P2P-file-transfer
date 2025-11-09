@@ -595,7 +595,7 @@ export const P2PFileSharing = () => {
 
             <button
               onClick={exitRoom}
-              className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold transition"
+              className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold transition cursor-pointer"
             >
               Exit Room
             </button>
@@ -734,7 +734,7 @@ export const P2PFileSharing = () => {
                       </div>
                       <button
                         onClick={() => requestFile(file)}
-                        className="px-3 py-2 bg-orange-500 rounded-md text-white font-semibold"
+                        className="px-3 py-2 bg-orange-500 rounded-md text-white font-semibold cursor-pointer"
                       >
                         Download
                       </button>
