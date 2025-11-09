@@ -515,7 +515,7 @@ export const P2PFileSharing = () => {
 
               <button
                 onClick={generateRoomCode}
-                className="w-full px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="w-full px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Shuffle size={18} />
                 Generate Random Code
@@ -525,7 +525,7 @@ export const P2PFileSharing = () => {
                 <div className="flex gap-2">
                   <button
                     onClick={copyRoomCode}
-                    className="flex-1 px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {copied ? (
                       <>
@@ -541,7 +541,7 @@ export const P2PFileSharing = () => {
                   </button>
                   <button
                     onClick={shareRoomCode}
-                    className="flex-1 px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-3 bg-white/6 hover:bg-white/8 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Share2 size={18} />
                     Share
@@ -552,7 +552,7 @@ export const P2PFileSharing = () => {
               <button
                 onClick={joinRoom}
                 disabled={!roomCode.trim()}
-                className="w-full px-6 py-4 bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-orange-600 hover:to-yellow-500 text-black font-bold rounded-xl transition-all text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-6 py-4 bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-orange-600 hover:to-yellow-500 text-black font-bold rounded-xl transition-all text-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 Join Room
               </button>
