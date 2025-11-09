@@ -18,7 +18,6 @@ import { io } from "socket.io-client";
 import SimplePeer from "simple-peer";
 
 export const P2PFileSharing = () => {
-  // existing functional states
   const [roomCode, setRoomCode] = useState("");
   const [isInRoom, setIsInRoom] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -29,8 +28,10 @@ export const P2PFileSharing = () => {
   const [availableFiles, setAvailableFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [downloads, setDownloads] = useState({});
+  const [isTransferring, setIsTransferring] = useState(false);
 
-  // refs & helpers
+
+
   const peersRef = useRef({});
   const fileInputRef = useRef(null);
   const incomingFileRef = useRef(null);
@@ -38,7 +39,7 @@ export const P2PFileSharing = () => {
   const receivedSizeRef = useRef(0);
   const selectedFileRef = useRef(null);
 
-  // UI-only states for send flow (no logic change)
+  // UI-only states for send flow 
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
   const [sentFileName, setSentFileName] = useState("");
@@ -61,7 +62,7 @@ export const P2PFileSharing = () => {
   };
 
   //---------//
-  // Generate random room code
+  // room code
   const generateRoomCode = () => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     setRoomCode(code);
@@ -73,7 +74,7 @@ export const P2PFileSharing = () => {
     }
   }, [isInRoom, roomCode]);
 
-  // Copy room code to clipboard
+  // Copy room code 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
     setCopied(true);
@@ -277,6 +278,7 @@ export const P2PFileSharing = () => {
         receivedChunksRef.current = [];
         receivedSizeRef.current = 0;
 
+        setIsTransferring(true);
         setDownloads((prev) => ({
           ...prev,
           [message.fileId]: {
@@ -305,6 +307,7 @@ export const P2PFileSharing = () => {
 
         if (receivedSizeRef.current >= incomingFileRef.current.fileSize) {
           saveReceivedFile();
+          setIsTransferring(false);
         }
       }
     }
@@ -375,30 +378,26 @@ export const P2PFileSharing = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Keep original behavior: fileId generation using socket.id if available
     const fileId = `${socket?.id || "local"}-${Date.now()}`;
     const fileWithId = Object.assign(file, { fileId });
 
     setSelectedFile(fileWithId);
     selectedFileRef.current = fileWithId;
 
-    // Reset UI send-states if user selects a new file
     setIsSending(false);
     setIsSent(false);
     setSentFileName("");
   };
 
-  // Updated handleSendFile to include UI states (spinner, tick, final message)
   const handleSendFile = async () => {
     if (!selectedFile || !socket) return;
 
-    // UI: begin sending
+    setIsTransferring(true);
     setIsSending(true);
     setIsSent(false);
-    setSentFileName(""); // clear previous final message
+    setSentFileName("");
 
     try {
-      // ----- original functional behavior (unchanged) -----
       socket.emit("file-offer", {
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
@@ -426,7 +425,7 @@ export const P2PFileSharing = () => {
 
       setIsSending(false);
       setIsSent(true);
-
+      setIsTransferring(false);
       setTimeout(() => {
         setIsSent(false);
         setSentFileName(selectedFile.name); 
@@ -465,6 +464,24 @@ export const P2PFileSharing = () => {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
+
+  useEffect(() => {
+  const handleBeforeUnload = (e) => {
+    if (isTransferring) {
+      e.preventDefault();
+      e.returnValue =
+        "A file transfer is in progress. Are you sure you want to leave this page?";
+      return e.returnValue;
+    }
+  };
+
+  window.addEventListener("beforeunload", handleBeforeUnload);
+
+  return () => {
+    window.removeEventListener("beforeunload", handleBeforeUnload);
+  };
+}, [isTransferring]);
+
 
   // Room COde Screen
   if (!isInRoom) {
@@ -557,11 +574,11 @@ export const P2PFileSharing = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center">
             <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-yellow-300">
               🎬 P2P File Sharing
             </h1>
-            <div className="text-sm text-gray-300">Peer-to-peer browser transfers</div>
+            {/* <div className="text-sm text-gray-300 mr-5">Peer-to-peer browser transfers</div> */}
           </div>
 
           <div className="flex items-center gap-4">
@@ -634,10 +651,10 @@ export const P2PFileSharing = () => {
                 <div className="mt-4 p-4 bg-white/6 border border-white/8 rounded-xl">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <div className={`font-semibold text-lg ${sentFileName ? "text-green-300" : "text-white"}`}>
+                      <div className={`font-semibold text-lg text-left ${sentFileName ? "text-green-300" : "text-white"}`}>
                         {sentFileName ? `${sentFileName} sent successfully` : selectedFile.name}
                       </div>
-                      <div className="text-sm text-gray-400">{formatBytes(selectedFile.size)}</div>
+                      <div className="text-sm text-gray-400 text-left">{formatBytes(selectedFile.size)}</div>
                     </div>
 
                     <button
@@ -652,7 +669,6 @@ export const P2PFileSharing = () => {
                           setIsSending(false);
                           setIsSent(false);
                         } else {
-                          // clear final message and selection
                           setSentFileName("");
                           setSelectedFile(null);
                         }
@@ -670,7 +686,7 @@ export const P2PFileSharing = () => {
                       className={`w-full px-5 py-3 rounded-lg text-black font-semibold transition flex items-center justify-center gap-3 ${
                         isSent
                           ? "bg-green-400/20 border border-green-500 text-green-300"
-                          : "bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-yellow-500 hover:to-orange-400"
+                          : "bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-yellow-500 hover:to-orange-400 cursor-pointer"
                       }`}
                     >
                       {isSending ? (
@@ -690,7 +706,7 @@ export const P2PFileSharing = () => {
                       ) : (
                         <>
                           <Upload size={16} />
-                          <span>Send File</span>
+                          <span className="cursor-pointer">Send File</span>
                         </>
                       )}
                     </button>
@@ -713,8 +729,8 @@ export const P2PFileSharing = () => {
                   {availableFiles.map((file) => (
                     <div key={file.fileId} className="flex items-center justify-between p-3 bg-white/3 rounded-xl border border-white/6">
                       <div>
-                        <div className="font-semibold">🎬 {file.fileName}</div>
-                        <div className="text-xs text-gray-400">{formatBytes(file.fileSize)} • From {file.peerId.substring(0,8)}...</div>
+                        <div className="font-semibold text-left mr-3">{file.fileName}</div>
+                        <div className="text-xs text-gray-400 text-left">{formatBytes(file.fileSize)} • From {file.peerId.substring(0,8)}...</div>
                       </div>
                       <button
                         onClick={() => requestFile(file)}
@@ -731,12 +747,14 @@ export const P2PFileSharing = () => {
             {/* Downloads */}
             {Object.keys(downloads).length > 0 && (
               <div className="bg-white/5 backdrop-blur border border-white/8 rounded-2xl p-6">
-                <h3 className="text-xl font-semibold mb-4">⬇️ Downloads</h3>
+                <h3 className="text-xl font-semibold mb-4 text-left flex align-items gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M40.518 34.316A9.21 9.21 0 0 0 44 24c-1.213-3.83-4.93-5.929-8.947-5.925h-2.321a14.737 14.737 0 1 0-25.31 13.429M24.008 41L24 23m6.364 11.636L24 41l-6.364-6.364"/></svg>
+                  Downloads</h3>
                 <div className="space-y-3">
                   {Object.entries(downloads).map(([fileId, download]) => (
                     <div key={fileId} className="p-3 bg-white/3 rounded-xl">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="font-semibold">{download.fileName}</div>
+                        <div className="font-semibold text-left">{download.fileName}</div>
                         <div className="text-sm text-gray-300">
                           {download.status === "completed" ? "✅ Complete" : `${download.progress}%`}
                         </div>
@@ -754,7 +772,7 @@ export const P2PFileSharing = () => {
             )}
           </div>
 
-          {/* RIGHT: Info / About Section */}
+          {/* RIGHT: Info Section */}
           <div className="space-y-6">
             <div className="bg-white/5 backdrop-blur border border-white/8 rounded-2xl p-6">
               <h3 className="text-2xl font-semibold text-orange-300 mb-2">How P2P Sharing Works</h3>
@@ -764,15 +782,15 @@ export const P2PFileSharing = () => {
               </p>
               <ul className="mt-4 space-y-2 text-gray-300">
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400">✔️</span>
+                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clip-rule="evenodd"/></svg></span>
                   Direct device-to-device transfer — no third party.
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400">✔️</span>
+                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clip-rule="evenodd"/></svg></span>
                   Fast and encrypted — powered by WebRTC data channels.
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400">✔️</span>
+                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clip-rule="evenodd"/></svg></span>
                   Works in browsers without extra setup.
                 </li>
               </ul>
