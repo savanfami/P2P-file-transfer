@@ -90,27 +90,35 @@ export const initializeSocket = (httpServer) => {
     });
 
     // File offer (within room)
-    socket.on("file-offer", (data) => {
-      const { fileName, fileSize, fileType, fileId } = data;
-      if (!fileName || !fileSize) return;
+  socket.on("file-offer", (data) => {
+  const files = Array.isArray(data) ? data : [data];
 
-      const offer = {
-        fileId: fileId || `${userId}-${Date.now()}`,
-        fileName,
-        fileSize,
-        fileType,
-        peerId: userId,
-        roomCode,
-        offeredAt: Date.now(),
-      };
+  files.forEach((file) => {
+    const { fileName, fileSize, fileType, fileId } = file;
+    if (!fileName || !fileSize) return;
 
-      fileOffers.set(offer.fileId, offer);
+    const offer = {
+      fileId: fileId || `${userId}-${Date.now()}`,
+      fileName,
+      fileSize,
+      fileType,
+      peerId: userId,
+      roomCode,
+      offeredAt: Date.now(),
+    };
 
-      const peer = peers.get(userId);
-      if (peer) peer.files.push(offer);
+    fileOffers.set(offer.fileId, offer);
 
-      socket.to(roomCode).emit("file-available", offer);
-    });
+    const peer = peers.get(userId);
+    if (peer) {
+      if (!Array.isArray(peer.files)) peer.files = [];
+      peer.files.push(offer);
+    }
+
+    socket.to(roomCode).emit("file-available", offer);
+  });
+});
+
 
     socket.on("exit-room", (data) => {
       const { userId, roomCode } = data;
