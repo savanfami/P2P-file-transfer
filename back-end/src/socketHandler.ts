@@ -40,10 +40,11 @@ export const initializeSocket = (httpServer) => {
       existingPeer.online = true;
       existingPeer.roomCode = roomCode;
       peers.set(userId, existingPeer);
-
       socket.emit("peers-list", {
         peers: Array.from(members).filter((id) => id !== userId),
+        totalPeers: members.size,
       });
+      console.log('emitted')
 
       socket.to(roomCode).emit("peer-reconnected", { peerId: userId });
       console.log(`🔄 Peer reconnected: ${userId} in room ${roomCode}`);
@@ -55,13 +56,11 @@ export const initializeSocket = (httpServer) => {
         roomCode,
       });
       console.log(`🆕 New peer connected: ${userId} in room ${roomCode}`);
+      socket.emit("peers-list", {
+        peers: Array.from(members).filter((id) => id !== userId),
+        totalPeers: members.size,
+      });
     }
-
-    // Send room peers
-    socket.emit("peers-list", {
-      peers: Array.from(members).filter((id) => id !== userId),
-      totalPeers: members.size,
-    });
 
     // Send existing file offers in room
     const currentOffers = Array.from(fileOffers.values()).filter(
@@ -90,34 +89,34 @@ export const initializeSocket = (httpServer) => {
     });
 
     // File offer (within room)
-  socket.on("file-offer", (data) => {
-  const files = Array.isArray(data) ? data : [data];
+    socket.on("file-offer", (data) => {
+      const files = Array.isArray(data) ? data : [data];
 
-  files.forEach((file) => {
-    const { fileName, fileSize, fileType, fileId } = file;
-    if (!fileName || !fileSize) return;
+      files.forEach((file) => {
+        const { fileName, fileSize, fileType, fileId } = file;
+        if (!fileName || !fileSize) return;
 
-    const offer = {
-      fileId: fileId || `${userId}-${Date.now()}`,
-      fileName,
-      fileSize,
-      fileType,
-      peerId: userId,
-      roomCode,
-      offeredAt: Date.now(),
-    };
+        const offer = {
+          fileId: fileId || `${userId}-${Date.now()}`,
+          fileName,
+          fileSize,
+          fileType,
+          peerId: userId,
+          roomCode,
+          offeredAt: Date.now(),
+        };
 
-    fileOffers.set(offer.fileId, offer);
+        fileOffers.set(offer.fileId, offer);
 
-    const peer = peers.get(userId);
-    if (peer) {
-      if (!Array.isArray(peer.files)) peer.files = [];
-      peer.files.push(offer);
-    }
+        const peer = peers.get(userId);
+        if (peer) {
+          if (!Array.isArray(peer.files)) peer.files = [];
+          peer.files.push(offer);
+        }
 
-    socket.to(roomCode).emit("file-available", offer);
-  });
-});
+        socket.to(roomCode).emit("file-available", offer);
+      });
+    });
 
 
     socket.on("exit-room", (data) => {
