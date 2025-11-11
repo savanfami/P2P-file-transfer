@@ -26,18 +26,18 @@ export const P2PFileSharing = () => {
   const [myPeerId, setMyPeerId] = useState("");
   const [peers, setPeers] = useState([]);
   const [availableFiles, setAvailableFiles] = useState([]);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFile, setSelectedFile] = useState([]);
   const [downloads, setDownloads] = useState({});
   const [isTransferring, setIsTransferring] = useState(false);
 
-
+ 
 
   const peersRef = useRef({});
   const fileInputRef = useRef(null);
   const incomingFileRef = useRef(null);
   const receivedChunksRef = useRef([]);
   const receivedSizeRef = useRef(0);
-  const selectedFileRef = useRef(null);
+  const selectedFileRef = useRef([]);
 
   // UI-only states for send flow 
   const [isSending, setIsSending] = useState(false);
@@ -374,35 +374,40 @@ export const P2PFileSharing = () => {
     }));
   };
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+const handleFileSelect = (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
 
-    const fileId = `${socket?.id || "local"}-${Date.now()}`;
-    const fileWithId = Object.assign(file, { fileId });
+  const filesWithIds = files.map((file) => {
+    const fileId = `${socket?.id || "local"}-${Date.now()}-${file.name}`;
+    return Object.assign(file, { fileId });
+  });
 
-    setSelectedFile(fileWithId);
-    selectedFileRef.current = fileWithId;
+  setSelectedFile(filesWithIds);
+  selectedFileRef.current = filesWithIds;
 
-    setIsSending(false);
-    setIsSent(false);
-    setSentFileName("");
-  };
+  setIsSending(false);
+  setIsSent(false);
+  setSentFileName("");
+};
 
-  const handleSendFile = async () => {
-    if (!selectedFile || !socket) return;
 
-    setIsTransferring(true);
-    setIsSending(true);
-    setIsSent(false);
-    setSentFileName("");
+const handleSendAllFiles = async () => {
+  if (!selectedFile.length || !socket) return;
 
-    try {
+  setIsTransferring(true);
+  setIsSending(true);
+  setIsSent(false);
+  setSentFileName("");
+
+  try {
+    // Notify peers and socket about each file
+    for (const file of selectedFile) {
       socket.emit("file-offer", {
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        fileType: selectedFile.type,
-        fileId: selectedFile.fileId,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        fileId: file.fileId,
       });
 
       Object.values(peersRef.current).forEach((peer) => {
@@ -410,32 +415,35 @@ export const P2PFileSharing = () => {
           peer.send(
             JSON.stringify({
               type: "file-info",
-              fileName: selectedFile.name,
-              fileSize: selectedFile.size,
-              fileType: selectedFile.type,
-              fileId: selectedFile.fileId,
+              fileName: file.name,
+              fileSize: file.size,
+              fileType: file.type,
+              fileId: file.fileId,
             })
           );
         }
       });
 
-    
-
-      await new Promise((r) => setTimeout(r, 900));
-
-      setIsSending(false);
-      setIsSent(true);
-      setIsTransferring(false);
-      setTimeout(() => {
-        setIsSent(false);
-        setSentFileName(selectedFile.name); 
-      }, 1400);
-    } catch (err) {
-      console.error("Error sending file:", err);
-      setIsSending(false);
-      setIsSent(false);
+      // small delay to avoid congestion
+      await new Promise((r) => setTimeout(r, 300));
     }
-  };
+
+    // Finish state updates
+    setIsSending(false);
+    setIsSent(true);
+    setIsTransferring(false);
+    setSentFileName("All Files");
+
+    setTimeout(() => {
+      setIsSent(false);
+    }, 1500);
+  } catch (err) {
+    console.error("Error sending multiple files:", err);
+    setIsSending(false);
+    setIsSent(false);
+  }
+};
+
 
   const requestFile = (fileData) => {
     const peer = peersRef.current[fileData.peerId];
@@ -642,77 +650,114 @@ export const P2PFileSharing = () => {
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 onChange={handleFileSelect}
                 className="hidden"
               />
 
               {/* Selected file card */}
-              {selectedFile && (
-                <div className="mt-4 p-4 bg-white/6 border border-white/8 rounded-xl">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className={`font-semibold text-lg text-left ${sentFileName ? "text-green-300" : "text-white"}`}>
-                        {sentFileName ? `${sentFileName} sent successfully` : selectedFile.name}
-                      </div>
-                      <div className="text-sm text-gray-400 text-left">{formatBytes(selectedFile.size)}</div>
-                    </div>
+     
+{/* Selected file cards */}
+{selectedFile.length > 0 && (
+  <div className="mt-4">
+    {/* Scrollable wrapper */}
+    <div className="max-h-72 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
+      {selectedFile.map((file, index) => (
+        <div
+          key={file.fileId}
+          className="p-4 bg-white/6 border border-white/8 rounded-xl flex items-center justify-between"
+        >
+          <div className="flex flex-col text-left">
+            <div
+              className={`font-semibold text-lg ${
+                sentFileName === file.name ? "text-green-300" : "text-white"
+              }`}
+            >
+              {sentFileName === file.name
+                ? `${file.name} sent successfully`
+                : file.name}
+            </div>
+            <div className="text-sm text-gray-400">
+              {formatBytes(file.size)}
+            </div>
+          </div>
 
-                    <button
-                      onClick={() => {
-                        if (!sentFileName) {
-                          if (selectedFile && socket) {
-                            socket.emit("remove-file-offer", {
-                              fileId: selectedFile.fileId,
-                            });
-                          }
-                          setSelectedFile(null);
-                          setIsSending(false);
-                          setIsSent(false);
-                        } else {
-                          setSentFileName("");
-                          setSelectedFile(null);
-                        }
-                      }}
-                      className={`p-2 rounded-lg ${sentFileName ? "bg-green-500/10 hover:bg-green-500/20" : "bg-red-500/10 hover:bg-red-500/20"}`}
-                    >
-                      <Trash2 className={sentFileName ? "text-green-300" : "text-red-300"} size={18} />
-                    </button>
-                  </div>
+          <button
+            onClick={() => {
+              if (sentFileName !== file.name) {
+                socket?.emit("remove-file-offer", { fileId: file.fileId });
+              }
+              const updated = selectedFile.filter((_, i) => i !== index);
+              setSelectedFile(updated);
+              selectedFileRef.current = updated;
+            }}
+            className={`p-2 rounded-lg ${
+              sentFileName === file.name
+                ? "bg-green-500/10 hover:bg-green-500/20"
+                : "bg-red-500/10 hover:bg-red-500/20"
+            }`}
+          >
+            <Trash2
+              className={
+                sentFileName === file.name ? "text-green-300" : "text-red-300"
+              }
+              size={18}
+            />
+          </button>
+        </div>
+      ))}
+    </div>
 
-                  {!sentFileName && (
-                    <button
-                      onClick={handleSendFile}
-                      disabled={isSending || isSent}
-                      className={`w-full px-5 py-3 rounded-lg text-black font-semibold transition flex items-center justify-center gap-3 ${
-                        isSent
-                          ? "bg-green-400/20 border border-green-500 text-green-300"
-                          : "bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-yellow-500 hover:to-orange-400 cursor-pointer"
-                      }`}
-                    >
-                      {isSending ? (
-                        <>
-                          <div className="w-5 h-5 border-3 border-t-transparent border-yellow-300 rounded-full animate-spin" />
-                          <span className="text-sm font-medium truncate">{selectedFile.name}</span>
-                        </>
-                      ) : isSent ? (
-                        <>
-                          <div className="w-7 h-7 rounded-full border-2 border-green-400 flex items-center justify-center bg-green-400/8">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M20 6 9 17l-5-5" />
-                            </svg>
-                          </div>
-                          <span className="text-green-300 font-semibold">Sent</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload size={16} />
-                          <span className="cursor-pointer">Send File</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              )}
+    {/* Single Send All Button */}
+    <button
+      onClick={handleSendAllFiles}
+      disabled={isSending || selectedFile.length === 0}
+      className={`w-full px-5 py-3 rounded-lg mt-4 text-black font-semibold transition flex items-center justify-center gap-3 ${
+        isSent
+          ? "bg-green-400/20 border border-green-500 text-green-300"
+          : "bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-yellow-500 hover:to-orange-400 cursor-pointer"
+      }`}
+    >
+      {isSending ? (
+        <>
+          <div className="w-5 h-5 border-3 border-t-transparent border-yellow-300 rounded-full animate-spin" />
+          <span className="text-sm font-medium">
+            Sending {selectedFile.length} file
+            {selectedFile.length > 1 ? "s" : ""}...
+          </span>
+        </>
+      ) : isSent ? (
+        <>
+          <div className="w-7 h-7 rounded-full border-2 border-green-400 flex items-center justify-center bg-green-400/8">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4 text-green-300"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </div>
+          <span className="text-green-300 font-semibold">All Files Sent</span>
+        </>
+      ) : (
+        <>
+          <Upload size={16} />
+          <span className="cursor-pointer">
+            Send All ({selectedFile.length})
+          </span>
+        </>
+      )}
+    </button>
+  </div>
+)}
+
+
+
             </div>
 
             {/* Available Files */}
@@ -782,15 +827,15 @@ export const P2PFileSharing = () => {
               </p>
               <ul className="mt-4 space-y-2 text-gray-300">
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clip-rule="evenodd"/></svg></span>
+                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clipRule="evenodd"/></svg></span>
                   Direct device-to-device transfer — no third party.
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clip-rule="evenodd"/></svg></span>
+                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clipRule="evenodd"/></svg></span>
                   Fast and encrypted — powered by WebRTC data channels.
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clip-rule="evenodd"/></svg></span>
+                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clipRule="evenodd"/></svg></span>
                   Works in browsers without extra setup.
                 </li>
               </ul>
