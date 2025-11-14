@@ -44,10 +44,9 @@ export const initializeSocket = (httpServer) => {
         peers: Array.from(members).filter((id) => id !== userId),
         totalPeers: members.size,
       });
-      console.log('emitted')
 
       socket.to(roomCode).emit("peer-reconnected", { peerId: userId });
-      console.log(`🔄 Peer reconnected: ${userId} in room ${roomCode}`);
+      console.log(`Peer reconnected: ${userId} in room ${roomCode}`);
     } else {
       peers.set(userId, {
         socketId: socket.id,
@@ -117,7 +116,6 @@ export const initializeSocket = (httpServer) => {
         socket.to(roomCode).emit("file-available", offer);
       });
     });
-
 
     socket.on("exit-room", (data) => {
       const { userId, roomCode } = data;
