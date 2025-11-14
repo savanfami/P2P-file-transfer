@@ -26,20 +26,22 @@ export const P2PFileSharing = () => {
   const [myPeerId, setMyPeerId] = useState("");
   const [peers, setPeers] = useState([]);
   const [availableFiles, setAvailableFiles] = useState([]);
-  const [selectedFile, setSelectedFile] = useState([]);
+  const [selectedFile, setSelectedFile] = useState([]); 
   const [downloads, setDownloads] = useState({});
   const [isTransferring, setIsTransferring] = useState(false);
 
- 
-
   const peersRef = useRef({});
   const fileInputRef = useRef(null);
-  const incomingFileRef = useRef(null);
-  const receivedChunksRef = useRef([]);
-  const receivedSizeRef = useRef(0);
-  const selectedFileRef = useRef([]);
 
-  // UI-only states for send flow 
+  const incomingFilesRef = useRef({}); 
+  const receivedChunksRef = useRef({}); 
+  const receivedSizeRef = useRef({}); 
+  const currentIncomingRef = useRef({}); 
+
+  const selectedFileRef = useRef([]); 
+
+  const activeTransfersRef = useRef(0);
+
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
   const [sentFileName, setSentFileName] = useState("");
@@ -55,7 +57,8 @@ export const P2PFileSharing = () => {
 
     setPeers([]);
     setAvailableFiles([]);
-    setSelectedFile(null);
+    setSelectedFile([]);
+    selectedFileRef.current = [];
     localStorage.removeItem("roomCode");
 
     setIsInRoom(false);
@@ -74,7 +77,7 @@ export const P2PFileSharing = () => {
     }
   }, [isInRoom, roomCode]);
 
-  // Copy room code 
+  // Copy room code
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
     setCopied(true);
@@ -111,6 +114,16 @@ export const P2PFileSharing = () => {
       setIsInRoom(true);
     }
   }, []);
+
+  // active transfers and update isTransferring
+  const incActiveTransfers = () => {
+    activeTransfersRef.current += 1;
+    if (!isTransferring) setIsTransferring(true);
+  };
+  const decActiveTransfers = () => {
+    activeTransfersRef.current = Math.max(0, activeTransfersRef.current - 1);
+    if (activeTransfersRef.current === 0) setIsTransferring(false);
+  };
 
   // Initialize Socket.IO
   useEffect(() => {
@@ -238,16 +251,23 @@ export const P2PFileSharing = () => {
     });
 
     peer.on("connect", () => {
-      if (selectedFile) {
-        peer.send(
-          JSON.stringify({
-            type: "file-info",
-            fileName: selectedFile.name,
-            fileSize: selectedFile.size,
-            fileType: selectedFile.type,
-            fileId: selectedFile.fileId,
-          })
-        );
+      if (selectedFileRef.current && selectedFileRef.current.length > 0) {
+        selectedFileRef.current.forEach((file) => {
+          try {
+            peer.send(
+              JSON.stringify({
+                type: "file-info",
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                fileId: file.fileId,
+                peerId: myPeerId,
+              })
+            );
+          } catch (err) {
+            console.warn("Failed to send file-info to peer:", err);
+          }
+        });
       }
     });
 
@@ -262,81 +282,173 @@ export const P2PFileSharing = () => {
     peersRef.current[peerId] = peer;
   };
 
-  const handlePeerData = (peerId, data) => {
+  const tryParseMessage = (data) => {
     try {
-      const message = JSON.parse(data.toString());
-
-      if (message.type === "file-request") {
-        if (
-          selectedFileRef.current &&
-          selectedFileRef.current.fileId === message.fileId
-        ) {
-          sendFile(peerId);
-        }
-      } else if (message.type === "file-start") {
-        incomingFileRef.current = message;
-        receivedChunksRef.current = [];
-        receivedSizeRef.current = 0;
-
-        setIsTransferring(true);
-        setDownloads((prev) => ({
-          ...prev,
-          [message.fileId]: {
-            fileName: message.fileName,
-            fileSize: message.fileSize,
-            progress: 0,
-            status: "downloading",
-          },
-        }));
+      let str = null;
+      if (typeof data === "string") {
+        str = data;
+      } else if (data instanceof ArrayBuffer) {
+        str = new TextDecoder().decode(data);
+      } else if (ArrayBuffer.isView(data)) {
+        // Uint8Array, Buffer, etc.
+        str = new TextDecoder().decode(data);
       }
-    } catch (e) {
-      if (incomingFileRef.current) {
-        receivedChunksRef.current.push(data);
-        receivedSizeRef.current += data.length;
 
-        const progress =
-          (receivedSizeRef.current / incomingFileRef.current.fileSize) * 100;
-
-        setDownloads((prev) => ({
-          ...prev,
-          [incomingFileRef.current.fileId]: {
-            ...prev[incomingFileRef.current.fileId],
-            progress: Math.round(progress),
-          },
-        }));
-
-        if (receivedSizeRef.current >= incomingFileRef.current.fileSize) {
-          saveReceivedFile();
-          setIsTransferring(false);
-        }
-      }
+      if (!str) return null;
+      const parsed = JSON.parse(str);
+      if (parsed && typeof parsed === "object" && parsed.type) return parsed;
+      return null;
+    } catch (err) {
+      return null;
     }
   };
 
-  const sendFile = async (peerId) => {
-    const fileToSend = selectedFileRef.current;
+  const handlePeerData = (peerId, data) => {
+    const message = tryParseMessage(data);
+
+    if (message) {
+      if (message.type === "file-request") {
+        const reqFileId = message.fileId;
+        sendFile(peerId, reqFileId).catch((err) =>
+          console.error("sendFile error:", err)
+        );
+      } else if (message.type === "file-start") {
+        const { fileId, fileName, fileSize, fileType } = message;
+        incomingFilesRef.current[fileId] = {
+          fileId,
+          fileName,
+          fileSize,
+          fileType,
+          peerId,
+        };
+        receivedChunksRef.current[fileId] = [];
+        receivedSizeRef.current[fileId] = 0;
+        currentIncomingRef.current[peerId] = fileId;
+
+        incActiveTransfers();
+
+        setDownloads((prev) => ({
+          ...prev,
+          [fileId]: {
+            fileName,
+            fileSize,
+            progress: 0,
+            status: "downloading",
+            peerId,
+          },
+        }));
+      } else if (message.type === "file-info") {
+        setAvailableFiles((prev) => {
+          const exists = prev.find((f) => f.fileId === message.fileId);
+          if (exists) return prev;
+          return [
+            ...prev,
+            {
+              fileId: message.fileId,
+              fileName: message.fileName,
+              fileSize: message.fileSize,
+              fileType: message.fileType,
+              peerId: message.peerId || peerId,
+            },
+          ];
+        });
+      }
+      return;
+    }
+    const fileId = currentIncomingRef.current[peerId];
+    if (!fileId) {
+      console.warn("Received binary chunk but no current incoming file mapped for peer:", peerId);
+      return;
+    }
+
+    let chunk;
+    if (data instanceof ArrayBuffer) {
+      chunk = new Uint8Array(data);
+    } else if (ArrayBuffer.isView(data)) {
+      chunk = new Uint8Array(data.buffer ?? data);
+    } else if (typeof data === "string") {
+      chunk = new TextEncoder().encode(data);
+    } else {
+      try {
+        chunk = new Uint8Array(data);
+      } catch (err) {
+        console.error("Unable to coerce incoming chunk to Uint8Array", err);
+        return;
+      }
+    }
+
+    receivedChunksRef.current[fileId].push(chunk);
+    receivedSizeRef.current[fileId] =
+      (receivedSizeRef.current[fileId] || 0) + chunk.byteLength;
+
+    const incomingMeta = incomingFilesRef.current[fileId];
+    if (!incomingMeta) return;
+
+    const progress =
+      (receivedSizeRef.current[fileId] / incomingMeta.fileSize) * 100;
+
+    setDownloads((prev) => ({
+      ...prev,
+      [fileId]: {
+        ...prev[fileId],
+        progress: Math.round(progress),
+      },
+    }));
+
+    if (receivedSizeRef.current[fileId] === incomingMeta.fileSize) {
+      setTimeout(() => {
+        saveReceivedFile(fileId);
+        if (currentIncomingRef.current[peerId] === fileId) {
+          delete currentIncomingRef.current[peerId];
+        }
+        decActiveTransfers();
+      }, 40);
+    }
+  };
+
+  const sendFile = async (peerId, fileId) => {
+    const files = Array.isArray(selectedFileRef.current) ? selectedFileRef.current : [];
+    const fileToSend = files.find((f) => f.fileId === fileId);
     const peer = peersRef.current[peerId];
-    if (!fileToSend || !peer) return;
+    if (!fileToSend || !peer) {
+      console.warn("Requested file not found or peer missing:", fileId, peerId);
+      return;
+    }
 
-    peer.send(
-      JSON.stringify({
-        type: "file-start",
-        fileName: fileToSend.name,
-        fileSize: fileToSend.size,
-        fileType: fileToSend.type,
-        fileId: fileToSend.fileId,
-      })
-    );
+    incActiveTransfers();
+//MEDATA
+    try {
+      peer.send(
+        JSON.stringify({
+          type: "file-start",
+          fileName: fileToSend.name,
+          fileSize: fileToSend.size,
+          fileType: fileToSend.type,
+          fileId: fileToSend.fileId,
+        })
+      );
+    } catch (err) {
+      console.error("Failed to send file-start metadata:", err);
+      decActiveTransfers();
+      return;
+    }
 
-    const CHUNK_SIZE = 64 * 1024;
+    const CHUNK_SIZE = 64 * 1024; 
     let offset = 0;
     const totalSize = fileToSend.size;
 
     while (offset < totalSize) {
       const slice = fileToSend.slice(offset, offset + CHUNK_SIZE);
-      const buffer = await slice.arrayBuffer();
+      let buffer;
+      try {
+        buffer = await slice.arrayBuffer();
+      } catch (err) {
+        console.error("Failed to read slice arrayBuffer:", err);
+        decActiveTransfers();
+        return;
+      }
 
-      while (peer._channel.bufferedAmount > 1 * 1024 * 1024) {
+      while (peer._channel && peer._channel.bufferedAmount > 1 * 1024 * 1024) {
         await new Promise((res) => setTimeout(res, 10));
       }
 
@@ -344,21 +456,28 @@ export const P2PFileSharing = () => {
         peer.send(buffer);
       } catch (err) {
         console.error("Error sending chunk:", err);
+        decActiveTransfers();
         return;
       }
 
       offset += buffer.byteLength;
     }
+
+    decActiveTransfers();
   };
 
-  const saveReceivedFile = () => {
-    const blob = new Blob(receivedChunksRef.current, {
-      type: incomingFileRef.current.fileType,
-    });
+  const saveReceivedFile = (fileId) => {
+    const chunks = receivedChunksRef.current[fileId] || [];
+    if (!chunks.length) {
+      console.warn("No chunks for file:", fileId);
+      return;
+    }
+
+    const blob = new Blob(chunks, { type: incomingFilesRef.current[fileId]?.fileType || "application/octet-stream" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = incomingFileRef.current.fileName;
+    a.download = incomingFilesRef.current[fileId]?.fileName || "download";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -366,84 +485,86 @@ export const P2PFileSharing = () => {
 
     setDownloads((prev) => ({
       ...prev,
-      [incomingFileRef.current.fileId]: {
-        ...prev[incomingFileRef.current.fileId],
+      [fileId]: {
+        ...prev[fileId],
         status: "completed",
         progress: 100,
       },
     }));
+
+    delete receivedChunksRef.current[fileId];
+    delete receivedSizeRef.current[fileId];
+    delete incomingFilesRef.current[fileId];
   };
 
-const handleFileSelect = (e) => {
-  const files = Array.from(e.target.files);
-  if (!files.length) return;
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
 
-  const filesWithIds = files.map((file) => {
-    const fileId = `${socket?.id || "local"}-${Date.now()}-${file.name}`;
-    return Object.assign(file, { fileId });
-  });
+    const filesWithIds = files.map((file) => {
+      const fileId = `${socket?.id || "local"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
+      return Object.assign(file, { fileId });
+    });
 
-  setSelectedFile(filesWithIds);
-  selectedFileRef.current = filesWithIds;
+    setSelectedFile(filesWithIds);
+    selectedFileRef.current = filesWithIds;
 
-  setIsSending(false);
-  setIsSent(false);
-  setSentFileName("");
-};
-
-
-const handleSendAllFiles = async () => {
-  if (!selectedFile.length || !socket) return;
-
-  setIsTransferring(true);
-  setIsSending(true);
-  setIsSent(false);
-  setSentFileName("");
-
-  try {
-    // Notify peers and socket about each file
-    for (const file of selectedFile) {
-      socket.emit("file-offer", {
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        fileId: file.fileId,
-      });
-
-      Object.values(peersRef.current).forEach((peer) => {
-        if (peer.connected) {
-          peer.send(
-            JSON.stringify({
-              type: "file-info",
-              fileName: file.name,
-              fileSize: file.size,
-              fileType: file.type,
-              fileId: file.fileId,
-            })
-          );
-        }
-      });
-
-      // small delay to avoid congestion
-      await new Promise((r) => setTimeout(r, 300));
-    }
-
-    // Finish state updates
-    setIsSending(false);
-    setIsSent(true);
-    setIsTransferring(false);
-    setSentFileName("All Files");
-
-    setTimeout(() => {
-      setIsSent(false);
-    }, 1500);
-  } catch (err) {
-    console.error("Error sending multiple files:", err);
     setIsSending(false);
     setIsSent(false);
-  }
-};
+    setSentFileName("");
+  };
 
+  const handleSendAllFiles = async () => {
+    if (!selectedFile.length || !socket) return;
+
+    setIsSending(true);
+    setIsSent(false);
+    setSentFileName("");
+
+    try {
+      for (const file of selectedFile) {
+        socket.emit("file-offer", {
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          fileId: file.fileId,
+        });
+
+        Object.values(peersRef.current).forEach((peer) => {
+          if (peer.connected) {
+            try {
+              peer.send(
+                JSON.stringify({
+                  type: "file-info",
+                  fileName: file.name,
+                  fileSize: file.size,
+                  fileType: file.type,
+                  fileId: file.fileId,
+                  peerId: myPeerId,
+                })
+              );
+            } catch (err) {
+              console.warn("Failed to send file-info to a peer:", err);
+            }
+          }
+        });
+
+        await new Promise((r) => setTimeout(r, 300));
+      }
+
+      setIsSending(false);
+      setIsSent(true);
+      setSentFileName("All Files");
+
+      setTimeout(() => {
+        setIsSent(false);
+      }, 1500);
+    } catch (err) {
+      console.error("Error sending multiple files:", err);
+      setIsSending(false);
+      setIsSent(false);
+    }
+  };
 
   const requestFile = (fileData) => {
     const peer = peersRef.current[fileData.peerId];
@@ -454,12 +575,17 @@ const handleSendAllFiles = async () => {
     }
 
     if (peer.connected) {
-      peer.send(
-        JSON.stringify({
-          type: "file-request",
-          fileId: fileData.fileId,
-        })
-      );
+      try {
+        peer.send(
+          JSON.stringify({
+            type: "file-request",
+            fileId: fileData.fileId,
+          })
+        );
+      } catch (err) {
+        console.error("Failed to send file-request:", err);
+        alert("Failed to request file. See console for details.");
+      }
     } else {
       alert("Peer is not connected. Please wait for connection to establish.");
     }
@@ -473,25 +599,23 @@ const handleSendAllFiles = async () => {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
+  // beforeunload protection
   useEffect(() => {
-  const handleBeforeUnload = (e) => {
-    if (isTransferring) {
-      e.preventDefault();
-      e.returnValue =
-        "A file transfer is in progress. Are you sure you want to leave this page?";
-      return e.returnValue;
-    }
-  };
+    const handleBeforeUnload = (e) => {
+      if (isTransferring) {
+        e.preventDefault();
+        e.returnValue = "A file transfer is in progress. Are you sure you want to leave this page?";
+        return e.returnValue;
+      }
+    };
 
-  window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isTransferring]);
 
-  return () => {
-    window.removeEventListener("beforeunload", handleBeforeUnload);
-  };
-}, [isTransferring]);
-
-
-  // Room COde Screen
+  // Room Entry Screen 
   if (!isInRoom) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white flex items-center justify-center p-6">
@@ -577,16 +701,17 @@ const handleSendAllFiles = async () => {
     );
   }
 
-  // Main App Screen 
+  // Main App Screen (dark modern gradient + two-column layout)
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white p-8">
       <div className="max-w-7xl mx-auto">
+        {/* top bar */}
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
             <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-yellow-300">
               🎬 P2P File Sharing
             </h1>
-            {/* <div className="text-sm text-gray-300 mr-5">Peer-to-peer browser transfers</div> */}
+            <div className="text-sm text-gray-300">Peer-to-peer browser transfers</div>
           </div>
 
           <div className="flex items-center gap-4">
@@ -603,14 +728,16 @@ const handleSendAllFiles = async () => {
 
             <button
               onClick={exitRoom}
-              className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold transition cursor-pointer"
+              className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold transition"
             >
               Exit Room
             </button>
           </div>
         </div>
 
+        {/* two-column grid */}
         <div className="grid lg:grid-cols-2 gap-8">
+          {/* LEFT: Upload, available files, downloads */}
           <div className="space-y-6">
             {/* Status Card */}
             <div className="bg-white/5 backdrop-blur border border-white/8 rounded-2xl p-4 flex items-center justify-between">
@@ -655,109 +782,104 @@ const handleSendAllFiles = async () => {
                 className="hidden"
               />
 
-              {/* Selected file card */}
-     
-{/* Selected file cards */}
-{selectedFile.length > 0 && (
-  <div className="mt-4">
-    {/* Scrollable wrapper */}
-    <div className="max-h-72 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
-      {selectedFile.map((file, index) => (
-        <div
-          key={file.fileId}
-          className="p-4 bg-white/6 border border-white/8 rounded-xl flex items-center justify-between"
-        >
-          <div className="flex flex-col text-left">
-            <div
-              className={`font-semibold text-lg ${
-                sentFileName === file.name ? "text-green-300" : "text-white"
-              }`}
-            >
-              {sentFileName === file.name
-                ? `${file.name} sent successfully`
-                : file.name}
-            </div>
-            <div className="text-sm text-gray-400">
-              {formatBytes(file.size)}
-            </div>
-          </div>
+              {/* Selected file cards */}
+              {selectedFile.length > 0 && (
+                <div className="mt-4">
+                  {/* Scrollable wrapper */}
+                  <div className="max-h-72 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
+                    {selectedFile.map((file, index) => (
+                      <div
+                        key={file.fileId}
+                        className="p-4 bg-white/6 border border-white/8 rounded-xl flex items-center justify-between"
+                      >
+                        <div className="flex flex-col text-left">
+                          <div
+                            className={`font-semibold text-lg ${
+                              sentFileName === file.name ? "text-green-300" : "text-white"
+                            }`}
+                          >
+                            {sentFileName === file.name
+                              ? `${file.name} sent successfully`
+                              : file.name}
+                          </div>
+                          <div className="text-sm text-gray-400">
+                            {formatBytes(file.size)}
+                          </div>
+                        </div>
 
-          <button
-            onClick={() => {
-              if (sentFileName !== file.name) {
-                socket?.emit("remove-file-offer", { fileId: file.fileId });
-              }
-              const updated = selectedFile.filter((_, i) => i !== index);
-              setSelectedFile(updated);
-              selectedFileRef.current = updated;
-            }}
-            className={`p-2 rounded-lg ${
-              sentFileName === file.name
-                ? "bg-green-500/10 hover:bg-green-500/20"
-                : "bg-red-500/10 hover:bg-red-500/20"
-            }`}
-          >
-            <Trash2
-              className={
-                sentFileName === file.name ? "text-green-300" : "text-red-300"
-              }
-              size={18}
-            />
-          </button>
-        </div>
-      ))}
-    </div>
+                        <button
+                          onClick={() => {
+                            if (sentFileName !== file.name) {
+                              socket?.emit("remove-file-offer", { fileId: file.fileId });
+                            }
+                            const updated = selectedFile.filter((_, i) => i !== index);
+                            setSelectedFile(updated);
+                            selectedFileRef.current = updated;
+                          }}
+                          className={`p-2 rounded-lg ${
+                            sentFileName === file.name
+                              ? "bg-green-500/10 hover:bg-green-500/20"
+                              : "bg-red-500/10 hover:bg-red-500/20"
+                          }`}
+                        >
+                          <Trash2
+                            className={
+                              sentFileName === file.name ? "text-green-300" : "text-red-300"
+                            }
+                            size={18}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
 
-    {/* Single Send All Button */}
-    <button
-      onClick={handleSendAllFiles}
-      disabled={isSending || selectedFile.length === 0}
-      className={`w-full px-5 py-3 rounded-lg mt-4 text-black font-semibold transition flex items-center justify-center gap-3 ${
-        isSent
-          ? "bg-green-400/20 border border-green-500 text-green-300"
-          : "bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-yellow-500 hover:to-orange-400 cursor-pointer"
-      }`}
-    >
-      {isSending ? (
-        <>
-          <div className="w-5 h-5 border-3 border-t-transparent border-yellow-300 rounded-full animate-spin" />
-          <span className="text-sm font-medium">
-            Sending {selectedFile.length} file
-            {selectedFile.length > 1 ? "s" : ""}...
-          </span>
-        </>
-      ) : isSent ? (
-        <>
-          <div className="w-7 h-7 rounded-full border-2 border-green-400 flex items-center justify-center bg-green-400/8">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4 text-green-300"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={3}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-          </div>
-          <span className="text-green-300 font-semibold">All Files Sent</span>
-        </>
-      ) : (
-        <>
-          <Upload size={16} />
-          <span className="cursor-pointer">
-            Send All ({selectedFile.length})
-          </span>
-        </>
-      )}
-    </button>
-  </div>
-)}
-
-
-
+                  {/* Single Send All Button */}
+                  <button
+                    onClick={handleSendAllFiles}
+                    disabled={isSending || selectedFile.length === 0}
+                    className={`w-full px-5 py-3 rounded-lg mt-4 text-black font-semibold transition flex items-center justify-center gap-3 ${
+                      isSent
+                        ? "bg-green-400/20 border border-green-500 text-green-300"
+                        : "bg-gradient-to-r from-orange-500 to-yellow-400 hover:from-yellow-500 hover:to-orange-400 cursor-pointer"
+                    }`}
+                  >
+                    {isSending ? (
+                      <>
+                        <div className="w-5 h-5 border-3 border-t-transparent border-yellow-300 rounded-full animate-spin" />
+                        <span className="text-sm font-medium">
+                          Sending {selectedFile.length} file
+                          {selectedFile.length > 1 ? "s" : ""}...
+                        </span>
+                      </>
+                    ) : isSent ? (
+                      <>
+                        <div className="w-7 h-7 rounded-full border-2 border-green-400 flex items-center justify-center bg-green-400/8">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4 text-green-300"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={3}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        </div>
+                        <span className="text-green-300 font-semibold">All Files Sent</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={16} />
+                        <span className="cursor-pointer">
+                          Send All ({selectedFile.length})
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Available Files */}
@@ -793,7 +915,7 @@ const handleSendAllFiles = async () => {
             {Object.keys(downloads).length > 0 && (
               <div className="bg-white/5 backdrop-blur border border-white/8 rounded-2xl p-6">
                 <h3 className="text-xl font-semibold mb-4 text-left flex align-items gap-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M40.518 34.316A9.21 9.21 0 0 0 44 24c-1.213-3.83-4.93-5.929-8.947-5.925h-2.321a14.737 14.737 0 1 0-25.31 13.429M24.008 41L24 23m6.364 11.636L24 41l-6.364-6.364"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M40.518 34.316A9.21 9.21 0 0 0 44 24c-1.213-3.83-4.93-5.929-8.947-5.925h-2.321a14.737 14.737 0 1 0-25.31 13.429M24.008 41L24 23m6.364 11.636L24 41l-6.364-6.364"/></svg>
                   Downloads</h3>
                 <div className="space-y-3">
                   {Object.entries(downloads).map(([fileId, download]) => (
@@ -827,15 +949,15 @@ const handleSendAllFiles = async () => {
               </p>
               <ul className="mt-4 space-y-2 text-gray-300">
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clipRule="evenodd"/></svg></span>
+                  <span className="text-green-400">✔️</span>
                   Direct device-to-device transfer — no third party.
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clipRule="evenodd"/></svg></span>
+                  <span className="text-green-400">✔️</span>
                   Fast and encrypted — powered by WebRTC data channels.
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-green-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M20.8 6.2a.75.75 0 0 1 .04 1.06l-9.75 10.5a.75.75 0 0 1-1.117-.02l-4.75-5.5a.753.753 0 0 1 1.137-.983l4.2 4.87l9.18-9.89a.75.75 0 0 1 1.06-.039z" clipRule="evenodd"/></svg></span>
+                  <span className="text-green-400">✔️</span>
                   Works in browsers without extra setup.
                 </li>
               </ul>
@@ -874,3 +996,4 @@ const handleSendAllFiles = async () => {
     </div>
   );
 };
+
