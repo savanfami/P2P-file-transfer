@@ -261,7 +261,6 @@ export const P2PFileSharing = () => {
                 fileSize: file.size,
                 fileType: file.type,
                 fileId: file.fileId,
-                peerId: myPeerId,
               })
             );
           } catch (err) {
