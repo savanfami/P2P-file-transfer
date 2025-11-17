@@ -30,6 +30,9 @@ export const initializeSocket = (httpServer) => {
     // Track room membership
     if (!roomPeers.has(roomCode)) roomPeers.set(roomCode, new Set());
     const members = roomPeers.get(roomCode);
+    const existingPeers = Array.from(members).filter((id) => id !== userId);
+
+
     members.add(userId);
 
     // Track peer
@@ -45,6 +48,16 @@ export const initializeSocket = (httpServer) => {
         totalPeers: members.size,
       });
 
+      existingPeers.forEach((existingPeerId) => {
+      const peer = peers.get(existingPeerId);
+      if (peer?.socketId) {
+        io.to(peer.socketId).emit("peer-joining", { 
+          peerId: userId,
+          isReconnection: true 
+        });
+      }
+    });
+
       socket.to(roomCode).emit("peer-reconnected", { peerId: userId });
       console.log(`Peer reconnected: ${userId} in room ${roomCode}`);
     } else {
@@ -59,6 +72,17 @@ export const initializeSocket = (httpServer) => {
         peers: Array.from(members).filter((id) => id !== userId),
         totalPeers: members.size,
       });
+      
+      
+      existingPeers.forEach((existingPeerId) => {
+      const peer = peers.get(existingPeerId);
+      if (peer?.socketId) {
+        io.to(peer.socketId).emit("peer-joining", { 
+          peerId: userId,
+          isReconnection: false 
+        });
+      }
+    });
     }
 
     // Send existing file offers in room
