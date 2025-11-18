@@ -164,7 +164,6 @@ export const P2PFileSharing = () => {
       (data.peers || []).forEach((peerId) => {
         const myPeerId = sessionStorage.getItem("peerId");
         const shouldInitiate = myPeerId < peerId;
-        console.log(shouldInitiate,'insid epeer list')
         connectToPeer(peerId, shouldInitiate, newSocket);
       });
     });
@@ -183,7 +182,6 @@ export const P2PFileSharing = () => {
 
       const myPeerId = sessionStorage.getItem("peerId");
       const shouldInitiate = myPeerId < peerId;
-      console.log(shouldInitiate,'shoud initi in peer-joinihn')
 
       connectToPeer(peerId, shouldInitiate, newSocket);
     });
@@ -197,9 +195,6 @@ export const P2PFileSharing = () => {
       setAvailableFiles((prev) => prev.filter((f) => f.peerId !== data.peerId));
     });
 
-    newSocket.on("user-joined", () => {
-      console.log("user jioned recieved");
-    });
 
     newSocket.on("peer-reconnected", (data) => {
       setPeers((prev) => {
@@ -208,15 +203,14 @@ export const P2PFileSharing = () => {
       });
       const myPeerId = sessionStorage.getItem("peerId");
       const shouldInitiate = myPeerId < data.peerId;
-      console.log(shouldInitiate, "inside reconnet");
       connectToPeer(data.peerId, shouldInitiate, newSocket);
     });
 
     newSocket.on("signal", (data) => {
-      if (!peersRef.current[data.from]) {
-        const shouldInitiate = data.signal.type === "answer";
-        connectToPeer(data.from, shouldInitiate, newSocket);
-      }
+      // if (!peersRef.current[data.from]) {
+      //   const shouldInitiate = data.signal.type === "answer";
+      //   connectToPeer(data.from, shouldInitiate, newSocket);
+      // }
       if (peersRef.current[data.from]) {
         try {
           peersRef.current[data.from].signal(data.signal);

@@ -67,7 +67,7 @@ export const initializeSocket = (httpServer) => {
         files: [],
         roomCode,
       });
-      console.log(`🆕 New peer connected: ${userId} in room ${roomCode}`);
+      console.log(` New peer connected: ${userId} in room ${roomCode}`);
       socket.emit("peers-list", {
         peers: Array.from(members).filter((id) => id !== userId),
         totalPeers: members.size,
@@ -143,7 +143,7 @@ export const initializeSocket = (httpServer) => {
 
     socket.on("exit-room", (data) => {
       const { userId, roomCode } = data;
-      console.log(`🚪 Peer exited room manually: ${userId} (${roomCode})`);
+      console.log(` Peer exited room manually: ${userId} (${roomCode})`);
 
       const peer = peers.get(userId);
       if (peer) {
@@ -191,7 +191,7 @@ export const initializeSocket = (httpServer) => {
 
     // Handle disconnect
     socket.on("disconnect", (reason) => {
-      console.log(`❌ Peer disconnected: ${userId} (${reason})`);
+      console.log(` Peer disconnected: ${userId} (${reason})`);
 
       const peer = peers.get(userId);
       if (!peer) return;
@@ -230,11 +230,11 @@ export const initializeSocket = (httpServer) => {
       if (now - offer.offeredAt > maxAge) {
         fileOffers.delete(fileId);
         io.to(offer.roomCode).emit("file-removed", { fileId });
-        console.log(`🗑️ Cleaned up old file offer: ${fileId}`);
+        console.log(` Cleaned up old file offer: ${fileId}`);
       }
     }
   }, 5 * 60 * 1000);
 
-  console.log("✅ Socket.IO initialized with room/session support");
+  console.log(" Socket.IO initialized");
   return io;
 };
